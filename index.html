@@ -269,7 +269,7 @@ const DB = { classes:[], teachers:[], subjects:[], students:[], attendance:[] };
 /* ============================= REMOTE SYNC (Google Sheets backend) =============================
    1. Deploy the companion Apps Script (Code.gs) as a Web App (see setup notes provided with this file).
    2. Paste the deployment URL below. Leave it as-is to run in local-only demo mode (no sharing). */
-const API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const API_URL = 'https://script.google.com/macros/s/AKfycbynNBRCUUV8v2WFbR2ewFylIduYqTgaie9buAjbK9pMw9wP5NB1TfuJlbL7yeQTHNeC/exec';
 const BACKEND_ON = API_URL.indexOf('https://') === 0;
 
 function apiCall(body){
