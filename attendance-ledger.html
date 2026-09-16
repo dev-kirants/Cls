@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Attendance Ledger — Student Attendance Management System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#211316;
+    --paper:#EFEDE5;
+    --surface:#FFFFFF;
+    --line:#DAD4C6;
+    --muted:#726B62;
+    --primary:#7A1E2C;
+    --primary-dark:#5A141F;
+    --primary-tint:#F3E1E1;
+    --gold:#B9862E;
+    --success:#2F6F4E;
+    --success-tint:#E4EFE8;
+    --warning:#B8860B;
+    --warning-tint:#F7EDD6;
+    --danger:#A33636;
+    --danger-tint:#F5E1DF;
+    --radius:4px;
+    --font-serif:'Source Serif 4', Georgia, serif;
+    --font-sans:'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--paper); color:var(--ink); font-family:var(--font-sans); line-height:1.4;}
+  h1,h2,h3{font-family:var(--font-serif); margin:0;}
+  button, input, select{font-family:var(--font-sans);}
+  button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible{outline:2px solid var(--primary); outline-offset:2px;}
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  /* ---------- Login ---------- */
+  .login-wrap{min-height:100vh; display:grid; grid-template-columns:1.1fr 1fr;}
+  @media (max-width:860px){ .login-wrap{grid-template-columns:1fr;} }
+  .login-hero{background:var(--ink); color:var(--paper); padding:64px 56px; display:flex; flex-direction:column; justify-content:center; gap:22px;}
+  .login-hero .eyebrow{color:var(--gold); font-weight:600; font-size:0.85rem; letter-spacing:0.02em;}
+  .login-hero h1{font-size:clamp(2.1rem,4vw,3.2rem); line-height:1.12; font-weight:600; max-width:11ch; color:#F6F2EA;}
+  .login-hero p{color:#D9D2C6; max-width:42ch; line-height:1.65; font-size:1rem;}
+  .ledger-mark{display:flex; flex-direction:column; gap:14px; margin-top:8px;}
+  .ledger-row{display:flex; align-items:center; gap:12px;}
+  .ledger-dot{width:13px; height:13px; border-radius:50%; border:2px solid #6b5d52; flex-shrink:0;}
+  .ledger-dot.done{background:var(--gold); border-color:var(--gold);}
+  .ledger-line{height:2px; background:rgba(255,255,255,0.16); flex:1;}
+  .ledger-line.short{width:55%; flex:none;}
+
+  .login-form-wrap{display:flex; align-items:center; justify-content:center; padding:48px 24px; background:var(--paper);}
+  .login-card{width:100%; max-width:400px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:32px;}
+  .role-tabs{display:flex; border-bottom:1px solid var(--line); margin-bottom:22px;}
+  .role-tab{flex:1; padding:10px 4px; text-align:center; cursor:pointer; font-weight:600; font-size:0.9rem; color:var(--muted); background:none; border:none; border-bottom:2px solid transparent;}
+  .role-tab.active{color:var(--primary); border-color:var(--primary);}
+  .login-panel .field:last-of-type{margin-bottom:18px;}
+  .hint{font-size:0.78rem; color:var(--muted); margin-top:16px; text-align:center; line-height:1.5;}
+
+  /* ---------- Shared form / field styles ---------- */
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:0.82rem; color:var(--muted); margin-bottom:6px;}
+  input, select{width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:var(--radius); font-size:0.92rem; background:var(--surface); color:var(--ink);}
+  select[multiple]{padding:6px;}
+  .form-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:6px;}
+  .form-row{display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px;}
+  .form-row .field{flex:1; min-width:170px; margin-bottom:0;}
+
+  /* ---------- Buttons ---------- */
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:10px 18px; border-radius:var(--radius); border:1px solid transparent; font-weight:600; font-size:0.88rem; cursor:pointer; transition:background-color .15s ease, border-color .15s ease, color .15s ease;}
+  .btn-primary{background:var(--primary); color:#fff;}
+  .btn-primary:hover{background:var(--primary-dark);}
+  .btn-ghost{background:transparent; border-color:var(--line); color:var(--ink);}
+  .btn-ghost:hover{background:var(--paper);}
+  .btn-block{width:100%;}
+  .btn-sm{padding:6px 12px; font-size:0.78rem;}
+  .btn-row{display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  .file-btn{cursor:pointer;}
+
+  /* ---------- Topbar ---------- */
+  .topbar{display:none; align-items:center; justify-content:space-between; padding:14px 28px; background:var(--surface); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20;}
+  .topbar .brand{font-family:var(--font-serif); font-weight:600; font-size:1.15rem; color:var(--primary);}
+  .who-wrap{display:flex; align-items:center; gap:14px;}
+  .who{font-size:0.85rem; color:var(--muted);}
+
+  /* ---------- App shell ---------- */
+  .app-shell{display:grid; grid-template-columns:220px 1fr; min-height:calc(100vh - 58px); align-items:start;}
+  @media (max-width:760px){ .app-shell{grid-template-columns:1fr;} .sidebar{display:flex; overflow-x:auto; border-right:none; border-bottom:1px solid var(--line);} }
+  .sidebar{background:var(--surface); border-right:1px solid var(--line); padding:20px 12px; position:sticky; top:58px;}
+  .side-title{font-weight:600; padding:6px 12px; font-size:0.95rem;}
+  .side-sub{color:var(--muted); font-size:0.76rem; padding:0 12px 14px;}
+  .sidebar-link{display:block; width:100%; text-align:left; padding:10px 12px; border-radius:var(--radius); color:var(--muted); font-weight:500; font-size:0.88rem; background:none; border:none; cursor:pointer; margin-bottom:2px; white-space:nowrap;}
+  .sidebar-link.active{background:var(--primary-tint); color:var(--primary-dark); font-weight:600;}
+  .sidebar-link:hover{background:var(--paper);}
+  .main{padding:28px; max-width:1180px; margin:0 auto; width:100%;}
+
+  /* ---------- Page bits ---------- */
+  .page-head{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; gap:14px; flex-wrap:wrap;}
+  .page-head h1{font-size:1.7rem;}
+  .sub{color:var(--muted); font-size:0.88rem; margin-top:4px;}
+  .notice{padding:12px 16px; border-radius:var(--radius); margin-bottom:18px; font-size:0.88rem;}
+  .notice-warning{background:var(--warning-tint); color:#7a5b06; border:1px solid var(--warning);}
+
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:20px; margin-bottom:18px;}
+  .card h3{font-size:1.05rem; margin-bottom:14px;}
+
+  .stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:18px;}
+  .stat-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px;}
+  .stat-card .num{font-family:var(--font-serif); font-size:1.7rem; font-weight:600;}
+  .stat-card .label{font-size:0.78rem; color:var(--muted); margin-top:2px;}
+
+  .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:760px){ .grid-2{grid-template-columns:1fr;} }
+
+  table.table{width:100%; border-collapse:collapse; font-size:0.88rem;}
+  .table th{text-align:left; padding:10px 12px; border-bottom:2px solid var(--ink); font-weight:600; font-size:0.76rem; color:var(--muted); text-transform:none;}
+  .table td{padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  .table tr:hover td{background:var(--paper);}
+  .empty{text-align:center; color:var(--muted); padding:26px !important;}
+
+  .badge{display:inline-flex; align-items:center; gap:4px; padding:3px 10px; border-radius:100px; font-size:0.75rem; font-weight:600;}
+  .badge-success{background:var(--success-tint); color:var(--success);}
+  .badge-warning{background:var(--warning-tint); color:var(--warning);}
+  .badge-danger{background:var(--danger-tint); color:var(--danger);}
+
+  .bar-track{background:var(--line); height:8px; border-radius:4px; overflow:hidden; width:100%; min-width:60px;}
+  .bar-fill{height:100%; border-radius:4px;}
+  .pct-cell{display:flex; flex-direction:column; gap:4px; min-width:90px;}
+  .pct-cell span{font-size:0.82rem; font-weight:600;}
+
+  .bar-list{display:flex; flex-direction:column; gap:11px;}
+  .bar-row{display:grid; grid-template-columns:150px 1fr 46px; align-items:center; gap:10px; font-size:0.83rem;}
+  .bar-label{color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .bar-pct{text-align:right; font-weight:600;}
+
+  .donut-wrap{display:flex; align-items:center; gap:26px; flex-wrap:wrap;}
+  .donut{width:150px; height:150px; border-radius:50%; position:relative; display:grid; place-items:center; background:conic-gradient(var(--dc) calc(var(--pct)*1%), var(--line) 0);}
+  .donut::before{content:''; position:absolute; inset:16px; border-radius:50%; background:var(--surface);}
+  .donut span{position:relative; z-index:1; font-family:var(--font-serif); font-size:1.35rem; font-weight:600;}
+  .donut-legend div{display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:0.88rem;}
+  .dot{width:10px; height:10px; border-radius:50%; display:inline-block;}
+
+  .trend{display:flex; gap:18px; align-items:flex-end; height:150px; padding-top:10px;}
+  .trend-col{display:flex; flex-direction:column; align-items:center; gap:6px; flex:1;}
+  .trend-bar-wrap{height:100px; display:flex; align-items:flex-end; width:100%; justify-content:center;}
+  .trend-bar{width:30px; border-radius:3px 3px 0 0; background:var(--primary);}
+  .trend-pct{font-size:0.8rem; font-weight:600;}
+  .trend-label{font-size:0.76rem; color:var(--muted);}
+
+  .toggle-group{display:flex; gap:6px;}
+  .toggle-btn{padding:6px 12px; border:1px solid var(--line); background:var(--surface); border-radius:var(--radius); cursor:pointer; font-size:0.78rem; font-weight:600; color:var(--muted); transition:background-color .15s ease, border-color .15s ease, color .15s ease;}
+  .toggle-btn.active-present{background:var(--success-tint); border-color:var(--success); color:var(--success);}
+  .toggle-btn.active-absent{background:var(--danger-tint); border-color:var(--danger); color:var(--danger);}
+  .mark-toolbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;}
+  .save-confirm{margin-left:12px; color:var(--success); font-size:0.84rem;}
+
+  /* ---------- Print ---------- */
+  #print-area{position:absolute; left:-9999px; top:0; width:800px; background:#fff; color:#000; padding:24px; font-family:var(--font-sans);}
+  @media print{
+    body > *:not(#print-area){display:none !important;}
+    #print-area{position:static; left:auto; width:auto;}
+  }
+</style>
+</head>
+<body>
+
+<div id="print-area"></div>
+
+<header id="topbar" class="topbar">
+  <div class="brand">Attendance Ledger</div>
+  <div class="who-wrap">
+    <span id="topbar-who" class="who"></span>
+    <button id="logout-btn" class="btn btn-ghost btn-sm">Sign out</button>
+  </div>
+</header>
+
+<section id="view-login" class="view active">
+  <div class="login-wrap">
+    <div class="login-hero">
+      <div class="eyebrow">Attendance Ledger</div>
+      <h1>Attendance, made visible.</h1>
+      <p>One system for students, teachers and administrators — role-based dashboards, subject-wise records, and reports you can export in a click.</p>
+      <div class="ledger-mark">
+        <div class="ledger-row"><span class="ledger-dot done"></span><span class="ledger-line"></span></div>
+        <div class="ledger-row"><span class="ledger-dot done"></span><span class="ledger-line"></span></div>
+        <div class="ledger-row"><span class="ledger-dot"></span><span class="ledger-line short"></span></div>
+      </div>
+    </div>
+    <div class="login-form-wrap">
+      <div class="login-card">
+        <div class="role-tabs">
+          <button class="role-tab active" data-role="student">Student</button>
+          <button class="role-tab" data-role="teacher">Teacher</button>
+          <button class="role-tab" data-role="admin">Admin</button>
+        </div>
+
+        <div id="login-panel-student" class="login-panel">
+          <div class="field"><label for="student-select">Register number</label><select id="student-select"></select></div>
+          <div class="field"><label for="student-pass">Date of birth</label><input id="student-pass" type="password" value="demo"/></div>
+          <button class="btn btn-primary btn-block" data-login="student">Sign in as student</button>
+        </div>
+
+        <div id="login-panel-teacher" class="login-panel" style="display:none">
+          <div class="field"><label for="teacher-select">Teacher ID</label><select id="teacher-select"></select></div>
+          <div class="field"><label for="teacher-pass">Password</label><input id="teacher-pass" type="password" value="demo"/></div>
+          <button class="btn btn-primary btn-block" data-login="teacher">Sign in as teacher</button>
+        </div>
+
+        <div id="login-panel-admin" class="login-panel" style="display:none">
+          <div class="field"><label>Admin username</label><input value="admin" disabled/></div>
+          <div class="field"><label>Password</label><input type="password" value="demo"/></div>
+          <button class="btn btn-primary btn-block" data-login="admin">Sign in as admin</button>
+        </div>
+
+        <p class="hint">Demo system — pick any record and sign in. No real credentials are checked.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="view-student" class="view">
+  <div class="main" id="student-content"></div>
+</section>
+
+<section id="view-teacher" class="view">
+  <div class="app-shell">
+    <nav class="sidebar" id="teacher-sidebar"></nav>
+    <div class="main" id="teacher-content"></div>
+  </div>
+</section>
+
+<section id="view-admin" class="view">
+  <div class="app-shell">
+    <nav class="sidebar" id="admin-sidebar"></nav>
+    <div class="main" id="admin-content"></div>
+  </div>
+</section>
+
+<script>
+/* ============================= DATA LAYER ============================= */
+const DB = { classes:[], teachers:[], subjects:[], students:[], attendance:[] };
+
+const monthsData = [
+  {name:'June', prefix:'2026-06', dates:['2026-06-02','2026-06-03','2026-06-04','2026-06-05','2026-06-08','2026-06-09','2026-06-10','2026-06-11','2026-06-12','2026-06-15']},
+  {name:'July', prefix:'2026-07', dates:['2026-07-01','2026-07-02','2026-07-03','2026-07-06','2026-07-07','2026-07-08','2026-07-09','2026-07-10','2026-07-13','2026-07-14']},
+  {name:'August', prefix:'2026-08', dates:['2026-08-03','2026-08-04','2026-08-05','2026-08-06','2026-08-07','2026-08-10','2026-08-11','2026-08-12','2026-08-13','2026-08-14']},
+  {name:'September', prefix:'2026-09', dates:['2026-09-01','2026-09-02','2026-09-03','2026-09-04','2026-09-07','2026-09-08']}
+];
+
+const subjectMonthRates = {
+  SU1:{June:0.84, July:0.87, August:0.90, September:0.93},
+  SU2:{June:0.83, July:0.86, August:0.89, September:0.90},
+  SU3:{June:0.72, July:0.76, August:0.80, September:0.82},
+  SU4:{June:0.83, July:0.85, August:0.88, September:0.90},
+  SU5:{June:0.85, July:0.87, August:0.88, September:0.90},
+  SU6:{June:0.88, July:0.90, August:0.91, September:0.93}
+};
+
+function mkStudent(id, regNo, name, dob, gender, classId){
+  const cls = DB.classes.find(c=>c.id===classId);
+  return {
+    id, regNo, name, dob, gender,
+    course:cls.course, dept:'Commerce', semester:cls.semester, section:cls.section,
+    email:regNo.toLowerCase()+'@college.edu',
+    phone:'98'+Math.floor(10000000+Math.random()*89999999),
+    admissionYear:'20'+regNo.slice(0,2),
+    status:'Active', classId
+  };
+}
+
+function seedDB(){
+  DB.classes = [
+    {id:'CL1', course:'M.Com', semester:1, section:'A', year:'2025-26'},
+    {id:'CL2', course:'M.Com', semester:2, section:'A', year:'2025-26'},
+    {id:'CL3', course:'M.Com', semester:2, section:'B', year:'2025-26'}
+  ];
+  DB.teachers = [
+    {id:'TC1', teacherId:'TCH001', name:'Rahul Sharma', password:'teach123', status:'Active'},
+    {id:'TC2', teacherId:'TCH002', name:'Priya Nair', password:'teach123', status:'Active'}
+  ];
+  DB.subjects = [
+    {id:'SU1', code:'MCOM-FM01', name:'Financial Management', semester:2, teacherId:'TC1', classId:'CL2'},
+    {id:'SU2', code:'MCOM-CA02', name:'Cost Accounting', semester:2, teacherId:'TC1', classId:'CL2'},
+    {id:'SU3', code:'MCOM-BS03', name:'Business Statistics', semester:2, teacherId:'TC2', classId:'CL2'},
+    {id:'SU4', code:'MCOM-EC04', name:'Economics', semester:2, teacherId:'TC2', classId:'CL2'},
+    {id:'SU5', code:'MCOM-FM01A', name:'Financial Management', semester:1, teacherId:'TC1', classId:'CL1'},
+    {id:'SU6', code:'MCOM-FM01C', name:'Financial Management', semester:2, teacherId:'TC1', classId:'CL3'}
+  ];
+  DB.students = [
+    mkStudent('ST1','24MCOM001','Aditi Rao','2004-03-12','Female','CL2'),
+    mkStudent('ST2','24MCOM002','Bharath Kumar','2003-11-02','Male','CL2'),
+    mkStudent('ST3','24MCOM003','Chitra Menon','2004-01-22','Female','CL2'),
+    mkStudent('ST4','24MCOM004','Dev Patel','2003-07-19','Male','CL2'),
+    mkStudent('ST5','24MCOM005','Esha Iyer','2004-05-30','Female','CL2'),
+    mkStudent('ST6','24MCOM006','Farhan Ali','2003-09-14','Male','CL2'),
+    mkStudent('ST7','24MCOM007','Gayatri Nair','2004-02-08','Female','CL2'),
+    mkStudent('ST8','24MCOM008','Harish Reddy','2003-12-25','Male','CL2'),
+    mkStudent('ST9','25MCOM101','Ishaan Verma','2005-04-17','Male','CL1'),
+    mkStudent('ST10','24MCOM201','Jyoti Singh','2004-06-09','Female','CL3')
+  ];
+  DB.attendance = [];
+}
+
+function generateAttendance(){
+  let n = 1;
+  DB.subjects.forEach((subject, sIdx)=>{
+    const rates = subjectMonthRates[subject.id];
+    const students = DB.students.filter(s=>s.classId===subject.classId);
+    if(!rates || !students.length) return;
+    monthsData.forEach(month=>{
+      const base = rates[month.name];
+      month.dates.forEach((date, dIdx)=>{
+        students.forEach((stu, stuIdx)=>{
+          const offset = (((stuIdx*7 + sIdx*13 + dIdx*3) % 11) - 5) / 100;
+          const eff = Math.min(0.99, Math.max(0.5, base + offset));
+          const status = Math.random() < eff ? 'P' : 'A';
+          DB.attendance.push({id:'A'+(n++), studentId:stu.id, subjectId:subject.id, teacherId:subject.teacherId, date, period:(dIdx%4)+1, status});
+        });
+      });
+    });
+  });
+}
+
+/* ============================= HELPERS ============================= */
+function $(sel, ctx){ return (ctx||document).querySelector(sel); }
+function $all(sel, ctx){ return Array.from((ctx||document).querySelectorAll(sel)); }
+function uid(prefix){ return prefix + Math.random().toString(36).slice(2,8); }
+
+function statusFor(pct){
+  if(pct>=85) return {cls:'success', label:'Good', color:'var(--success)'};
+  if(pct>=75) return {cls:'warning', label:'Watch', color:'var(--warning)'};
+  return {cls:'danger', label:'Critical', color:'var(--danger)'};
+}
+
+function subjectStatsForStudent(studentId, subjectId){
+  const recs = DB.attendance.filter(a=>a.studentId===studentId && a.subjectId===subjectId);
+  const held = recs.length;
+  const present = recs.filter(r=>r.status==='P').length;
+  const pct = held ? Math.round((present/held)*1000)/10 : 0;
+  return {held, present, absent:held-present, pct};
+}
+
+function overallStatsForStudent(studentId){
+  const student = DB.students.find(s=>s.id===studentId);
+  const subjects = DB.subjects.filter(su=>su.classId===student.classId);
+  let held=0, present=0;
+  subjects.forEach(su=>{ const st=subjectStatsForStudent(studentId, su.id); held+=st.held; present+=st.present; });
+  const pct = held ? Math.round((present/held)*1000)/10 : 0;
+  return {held, present, absent:held-present, pct, subjects};
+}
+
+function monthlyTrendForStudent(studentId){
+  const student = DB.students.find(s=>s.id===studentId);
+  const subjectIds = DB.subjects.filter(su=>su.classId===student.classId).map(s=>s.id);
+  return monthsData.map(m=>{
+    const recs = DB.attendance.filter(a=>a.studentId===studentId && subjectIds.includes(a.subjectId) && a.date.startsWith(m.prefix));
+    const held = recs.length;
+    const present = recs.filter(r=>r.status==='P').length;
+    return {name:m.name, pct: held ? Math.round((present/held)*100) : 0};
+  });
+}
+
+function subjectOverallStats(subjectId){
+  const recs = DB.attendance.filter(a=>a.subjectId===subjectId);
+  const held = recs.length;
+  const present = recs.filter(r=>r.status==='P').length;
+  return {held, present, absent:held-present, pct: held ? Math.round((present/held)*1000)/10 : 0};
+}
+
+function classOverallStats(classId){
+  const studentIds = DB.students.filter(s=>s.classId===classId).map(s=>s.id);
+  const recs = DB.attendance.filter(a=>studentIds.includes(a.studentId));
+  const held = recs.length;
+  const present = recs.filter(r=>r.status==='P').length;
+  return {held, present, pct: held ? Math.round((present/held)*1000)/10 : 0};
+}
+
+function overallStatsAll(){
+  const held = DB.attendance.length;
+  const present = DB.attendance.filter(r=>r.status==='P').length;
+  return {held, present, pct: held ? Math.round((present/held)*1000)/10 : 0};
+}
+
+function barListHtml(items){
+  return '<div class="bar-list">' + items.map(it=>{
+    const info = statusFor(it.pct);
+    return '<div class="bar-row"><span class="bar-label">'+it.label+'</span><div class="bar-track"><div class="bar-fill" style="width:'+it.pct+'%;background:'+info.color+'"></div></div><span class="bar-pct">'+it.pct+'%</span></div>';
+  }).join('') + '</div>';
+}
+
+function donutHtml(pct, presentLabel, absentLabel){
+  const info = statusFor(pct);
+  return '<div class="donut-wrap">'
+    + '<div class="donut" style="--pct:'+pct+';--dc:'+info.color+'"><span>'+pct+'%</span></div>'
+    + '<div class="donut-legend">'
+    + '<div><span class="dot" style="background:'+info.color+'"></span>'+presentLabel+'</div>'
+    + '<div><span class="dot" style="background:var(--line)"></span>'+absentLabel+'</div>'
+    + '</div></div>';
+}
+
+function trendHtml(trend){
+  return '<div class="trend">' + trend.map(m=>
+    '<div class="trend-col"><div class="trend-bar-wrap"><div class="trend-bar" style="height:'+m.pct+'px"></div></div><span class="trend-pct">'+m.pct+'%</span><span class="trend-label">'+m.name.slice(0,3)+'</span></div>'
+  ).join('') + '</div>';
+}
+
+function downloadCSV(filename, rows){
+  const csv = rows.map(r=>r.map(cell=>{
+    const s = String(cell===undefined || cell===null ? '' : cell);
+    return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function printReport(html){
+  $('#print-area').innerHTML = html;
+  window.print();
+}
+
+/* ============================= APP STATE ============================= */
+const state = {
+  role:null, studentId:null, teacherId:null,
+  teacherTab:'dashboard', adminTab:'overview',
+  markSubject:null, markDate:'2026-09-14', markPeriod:1, markLoaded:false, markDraft:{},
+  recFilters:{subject:'all', month:'all', q:''},
+  reportSubject:null, reportMonth:null,
+  studentForm:null, studentSearch:'',
+  teacherForm:null, subjectForm:null, classForm:null,
+  adminAttFilters:{classId:'all', subjectId:'all', teacherId:'all', month:'all', q:''}
+};
+
+/* ============================= LOGIN / NAV ============================= */
+function populateLoginSelects(){
+  $('#student-select').innerHTML = DB.students.map(s=>'<option value="'+s.id+'">'+s.name+' — '+s.regNo+'</option>').join('');
+  $('#teacher-select').innerHTML = DB.teachers.map(t=>'<option value="'+t.id+'">'+t.name+' — '+t.teacherId+'</option>').join('');
+}
+
+function bindLoginEvents(){
+  $all('.role-tab').forEach(tab=>tab.addEventListener('click', ()=>{
+    $all('.role-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    $all('.login-panel').forEach(p=>p.style.display='none');
+    $('#login-panel-'+tab.dataset.role).style.display='block';
+  }));
+  $all('[data-login]').forEach(btn=>btn.addEventListener('click', ()=>login(btn.dataset.login)));
+  $('#logout-btn').addEventListener('click', logout);
+}
+
+function login(role){
+  state.role = role;
+  if(role==='student') state.studentId = $('#student-select').value;
+  if(role==='teacher'){ state.teacherId = $('#teacher-select').value; state.teacherTab='dashboard'; }
+  if(role==='admin') state.adminTab='overview';
+  enterApp();
+}
+
+function logout(){
+  state.role = null;
+  $('#topbar').style.display='none';
+  $all('.view').forEach(v=>v.classList.remove('active'));
+  $('#view-login').classList.add('active');
+}
+
+function updateTopbarWho(){
+  let label = '';
+  if(state.role==='student'){ const s=DB.students.find(x=>x.id===state.studentId); label = s.name+' · Student'; }
+  if(state.role==='teacher'){ const t=DB.teachers.find(x=>x.id===state.teacherId); label = t.name+' · Teacher'; }
+  if(state.role==='admin') label = 'Administrator';
+  $('#topbar-who').textContent = label;
+}
+
+function enterApp(){
+  $all('.view').forEach(v=>v.classList.remove('active'));
+  $('#view-'+state.role).classList.add('active');
+  $('#topbar').style.display='flex';
+  updateTopbarWho();
+  if(state.role==='student') renderStudent();
+  if(state.role==='teacher'){ renderTeacherSidebar(); renderTeacherContent(); }
+  if(state.role==='admin'){ renderAdminSidebar(); renderAdminContent(); }
+}
+
+/* ============================= STUDENT DASHBOARD ============================= */
+function renderStudent(){
+  const student = DB.students.find(s=>s.id===state.studentId);
+  const cls = DB.classes.find(c=>c.id===student.classId);
+  const overall = overallStatsForStudent(student.id);
+  const trend = monthlyTrendForStudent(student.id);
+  const info = statusFor(overall.pct);
+  const lowSubjects = overall.subjects.filter(su=>subjectStatsForStudent(student.id, su.id).pct < 75);
+
+  let html = '<div class="page-head"><div><h1>'+student.name+'</h1><div class="sub">Register no. '+student.regNo+' · '+cls.course+' · Semester '+cls.semester+' · Section '+cls.section+'</div></div><span class="badge badge-'+info.cls+'">'+info.label+'</span></div>';
+
+  if(lowSubjects.length){
+    html += '<div class="notice notice-warning">Attendance shortage: '+lowSubjects.map(s=>s.name).join(', ')+' '+(lowSubjects.length>1?'are':'is')+' below the 75% requirement.</div>';
+  }
+
+  html += '<div class="stat-grid">'
+    + '<div class="stat-card"><div class="num">'+overall.pct+'%</div><div class="label">Overall attendance</div></div>'
+    + '<div class="stat-card"><div class="num">'+overall.subjects.length+'</div><div class="label">Subjects enrolled</div></div>'
+    + '<div class="stat-card"><div class="num">'+overall.held+'</div><div class="label">Classes held</div></div>'
+    + '<div class="stat-card"><div class="num">'+overall.present+'</div><div class="label">Classes attended</div></div>'
+    + '</div>';
+
+  html += '<div class="grid-2">'
+    + '<div class="card"><h3>Overall attendance</h3>' + donutHtml(overall.pct, 'Present · '+overall.present, 'Absent · '+overall.absent) + '</div>'
+    + '<div class="card"><h3>Monthly trend</h3>' + trendHtml(trend) + '</div>'
+    + '</div>';
+
+  html += '<div class="card"><h3>Subject-wise attendance</h3><table class="table"><thead><tr><th>Subject</th><th>Classes held</th><th>Present</th><th>Absent</th><th>Percentage</th><th></th></tr></thead><tbody>'
+    + overall.subjects.map(su=>{
+        const st = subjectStatsForStudent(student.id, su.id);
+        const sInfo = statusFor(st.pct);
+        return '<tr><td>'+su.name+'</td><td>'+st.held+'</td><td>'+st.present+'</td><td>'+st.absent+'</td>'
+          + '<td><div class="pct-cell"><span>'+st.pct+'%</span><div class="bar-track"><div class="bar-fill" style="width:'+st.pct+'%;background:'+sInfo.color+'"></div></div></div></td>'
+          + '<td><span class="badge badge-'+sInfo.cls+'">'+sInfo.label+'</span></td></tr>';
+      }).join('')
+    + '</tbody></table></div>';
+
+  $('#student-content').innerHTML = html;
+}
+
+/* ============================= TEACHER DASHBOARD ============================= */
+function renderTeacherSidebar(){
+  const teacher = DB.teachers.find(t=>t.id===state.teacherId);
+  const tabs = [['dashboard','Dashboard'],['mark','Mark attendance'],['records','Attendance records'],['reports','Reports']];
+  $('#teacher-sidebar').innerHTML = '<div class="side-title">'+teacher.name+'</div><div class="side-sub">'+teacher.teacherId+'</div>'
+    + tabs.map(t=>'<button class="sidebar-link '+(state.teacherTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
+  $all('#teacher-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.teacherTab = btn.dataset.tab;
+    renderTeacherSidebar();
+    renderTeacherContent();
+  }));
+}
+
+function renderTeacherContent(){
+  const teacher = DB.teachers.find(t=>t.id===state.teacherId);
+  if(state.teacherTab==='dashboard') return renderTeacherDashboard(teacher);
+  if(state.teacherTab==='mark') return renderTeacherMark(teacher);
+  if(state.teacherTab==='records') return renderTeacherRecords(teacher);
+  if(state.teacherTab==='reports') return renderTeacherReports(teacher);
+}
+
+function renderTeacherDashboard(teacher){
+  const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
+  const classIds = new Set(subjects.map(s=>s.classId));
+  let html = '<div class="page-head"><div><h1>Welcome back, '+teacher.name.split(' ')[0]+'</h1><div class="sub">'+subjects.length+' subjects · '+classIds.size+' classes</div></div></div>';
+
+  html += '<div class="stat-grid">'
+    + '<div class="stat-card"><div class="num">'+subjects.length+'</div><div class="label">Subjects assigned</div></div>'
+    + '<div class="stat-card"><div class="num">'+DB.students.filter(s=>subjects.some(su=>su.classId===s.classId)).length+'</div><div class="label">Students taught</div></div>'
+    + '<div class="stat-card"><div class="num">'+DB.attendance.filter(a=>a.teacherId===teacher.id).length+'</div><div class="label">Attendance entries logged</div></div>'
+    + '</div>';
+
+  html += '<div class="card"><h3>My subjects</h3><table class="table"><thead><tr><th>Code</th><th>Subject</th><th>Class</th><th>Average attendance</th></tr></thead><tbody>'
+    + subjects.map(su=>{
+        const cls = DB.classes.find(c=>c.id===su.classId);
+        const stats = subjectOverallStats(su.id);
+        const info = statusFor(stats.pct);
+        return '<tr><td>'+su.code+'</td><td>'+su.name+'</td><td>'+cls.course+' S'+cls.semester+'-'+cls.section+'</td><td><span class="badge badge-'+info.cls+'">'+stats.pct+'%</span></td></tr>';
+      }).join('') || '<tr><td colspan="4" class="empty">No subjects assigned yet.</td></tr>'
+    + '</tbody></table></div>';
+
+  $('#teacher-content').innerHTML = html;
+}
+
+function renderTeacherMark(teacher){
+  const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
+  if(!state.markSubject || !subjects.find(s=>s.id===state.markSubject)) state.markSubject = subjects[0] ? subjects[0].id : null;
+
+  let html = '<div class="page-head"><div><h1>Mark attendance</h1><div class="sub">Select a subject, date and period, then record who attended.</div></div></div>';
+
+  if(!subjects.length){
+    html += '<div class="card"><p class="empty">No subjects are assigned to you yet.</p></div>';
+    $('#teacher-content').innerHTML = html;
+    return;
+  }
+
+  html += '<div class="card"><div class="form-row">'
+    + '<div class="field"><label>Subject</label><select id="mark-subject">' + subjects.map(su=>'<option value="'+su.id+'" '+(su.id===state.markSubject?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Date</label><input type="date" id="mark-date" value="'+state.markDate+'"/></div>'
+    + '<div class="field"><label>Period</label><select id="mark-period">' + [1,2,3,4].map(p=>'<option value="'+p+'" '+(p===state.markPeriod?'selected':'')+'>Period '+p+'</option>').join('') + '</select></div>'
+    + '</div><button class="btn btn-ghost" id="load-students-btn">Load class list</button></div>';
+
+  const subject = DB.subjects.find(s=>s.id===state.markSubject);
+  const students = DB.students.filter(s=>s.classId===subject.classId);
+
+  if(state.markLoaded){
+    html += '<div class="card"><div class="mark-toolbar"><h3>'+subject.name+' · '+students.length+' students</h3><button class="btn btn-ghost btn-sm" id="mark-all-present">Mark all present</button></div>'
+      + '<table class="table"><thead><tr><th>Reg. no.</th><th>Student</th><th>Status</th></tr></thead><tbody>'
+      + students.map(s=>{
+          const status = state.markDraft[s.id] || 'P';
+          return '<tr><td>'+s.regNo+'</td><td>'+s.name+'</td><td><div class="toggle-group" data-student="'+s.id+'">'
+            + '<button class="toggle-btn '+(status==='P'?'active-present':'')+'" data-status="P">Present</button>'
+            + '<button class="toggle-btn '+(status==='A'?'active-absent':'')+'" data-status="A">Absent</button>'
+            + '</div></td></tr>';
+        }).join('')
+      + '</tbody></table><button class="btn btn-primary" id="save-attendance-btn" style="margin-top:16px;">Save attendance</button><span id="save-confirm" class="save-confirm"></span></div>';
+  }
+
+  $('#teacher-content').innerHTML = html;
+
+  $('#mark-subject').addEventListener('change', e=>{ state.markSubject=e.target.value; state.markLoaded=false; state.markDraft={}; renderTeacherMark(teacher); });
+  $('#mark-date').addEventListener('change', e=>{ state.markDate=e.target.value; });
+  $('#mark-period').addEventListener('change', e=>{ state.markPeriod=Number(e.target.value); });
+  $('#load-students-btn').addEventListener('click', ()=>{
+    state.markLoaded = true;
+    state.markDraft = {};
+    students.forEach(s=>state.markDraft[s.id]='P');
+    renderTeacherMark(teacher);
+  });
+
+  if(state.markLoaded){
+    $all('.toggle-group').forEach(group=>{
+      group.addEventListener('click', e=>{
+        const btn = e.target.closest('.toggle-btn');
+        if(!btn) return;
+        state.markDraft[group.dataset.student] = btn.dataset.status;
+        renderTeacherMark(teacher);
+      });
+    });
+    $('#mark-all-present').addEventListener('click', ()=>{
+      Object.keys(state.markDraft).forEach(k=>state.markDraft[k]='P');
+      renderTeacherMark(teacher);
+    });
+    $('#save-attendance-btn').addEventListener('click', ()=>{
+      const date = state.markDate || '2026-09-14';
+      const period = state.markPeriod || 1;
+      Object.entries(state.markDraft).forEach(([studentId, status])=>{
+        const existing = DB.attendance.find(a=>a.studentId===studentId && a.subjectId===state.markSubject && a.date===date && a.period===period);
+        if(existing) existing.status = status;
+        else DB.attendance.push({id:uid('A'), studentId, subjectId:state.markSubject, teacherId:teacher.id, date, period, status});
+      });
+      $('#save-confirm').textContent = 'Saved '+Object.keys(state.markDraft).length+' records for '+date+'.';
+    });
+  }
+}
+
+function renderTeacherRecords(teacher){
+  const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
+  let html = '<div class="page-head"><div><h1>Attendance records</h1><div class="sub">Review or correct previously marked attendance.</div></div></div>';
+  html += '<div class="card"><div class="form-row">'
+    + '<div class="field"><label>Subject</label><select id="rec-subject"><option value="all">All subjects</option>' + subjects.map(su=>'<option value="'+su.id+'" '+(state.recFilters.subject===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Month</label><select id="rec-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(state.recFilters.month===m.prefix?'selected':'')+'>'+m.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Student</label><input id="rec-search" placeholder="Search by name or reg. no." value="'+state.recFilters.q+'"/></div>'
+    + '</div></div>'
+    + '<div id="rec-results-card" class="card"></div>';
+
+  $('#teacher-content').innerHTML = html;
+
+  $('#rec-subject').addEventListener('change', e=>{ state.recFilters.subject=e.target.value; renderRecResults(teacher); });
+  $('#rec-month').addEventListener('change', e=>{ state.recFilters.month=e.target.value; renderRecResults(teacher); });
+  $('#rec-search').addEventListener('input', e=>{ state.recFilters.q=e.target.value; renderRecResults(teacher); });
+
+  renderRecResults(teacher);
+}
+
+function renderRecResults(teacher){
+  let recs = DB.attendance.filter(a=>a.teacherId===teacher.id);
+  if(state.recFilters.subject!=='all') recs = recs.filter(a=>a.subjectId===state.recFilters.subject);
+  if(state.recFilters.month!=='all') recs = recs.filter(a=>a.date.startsWith(state.recFilters.month));
+  if(state.recFilters.q){
+    const q = state.recFilters.q.toLowerCase();
+    recs = recs.filter(a=>{ const s=DB.students.find(st=>st.id===a.studentId); return s && (s.name.toLowerCase().includes(q) || s.regNo.toLowerCase().includes(q)); });
+  }
+  recs = recs.slice().sort((a,b)=> a.date<b.date?1:-1).slice(0,150);
+
+  const html = '<table class="table"><thead><tr><th>Date</th><th>Period</th><th>Subject</th><th>Reg. no.</th><th>Student</th><th>Status</th><th></th></tr></thead><tbody>'
+    + (recs.map(r=>{
+        const s = DB.students.find(st=>st.id===r.studentId);
+        const su = DB.subjects.find(x=>x.id===r.subjectId);
+        return '<tr><td>'+r.date+'</td><td>'+r.period+'</td><td>'+su.name+'</td><td>'+s.regNo+'</td><td>'+s.name+'</td>'
+          + '<td><span class="badge badge-'+(r.status==='P'?'success':'danger')+'">'+(r.status==='P'?'Present':'Absent')+'</span></td>'
+          + '<td><button class="btn btn-ghost btn-sm" data-flip="'+r.id+'">Flip</button></td></tr>';
+      }).join('') || '<tr><td colspan="7" class="empty">No records match these filters.</td></tr>')
+    + '</tbody></table>';
+
+  $('#rec-results-card').innerHTML = html;
+  $all('[data-flip]').forEach(btn=>btn.addEventListener('click', ()=>{
+    const rec = DB.attendance.find(a=>a.id===btn.dataset.flip);
+    rec.status = rec.status==='P' ? 'A' : 'P';
+    renderRecResults(teacher);
+  }));
+}
+
+function subjectMonthMatrix(subjectId, monthPrefix){
+  const subject = DB.subjects.find(s=>s.id===subjectId);
+  const month = monthsData.find(m=>m.prefix===monthPrefix);
+  const students = DB.students.filter(s=>s.classId===subject.classId);
+  const rows = students.map(s=>{
+    const cells = month.dates.map(d=>{
+      const rec = DB.attendance.find(a=>a.studentId===s.id && a.subjectId===subjectId && a.date===d);
+      return rec ? rec.status : '-';
+    });
+    const held = cells.filter(c=>c!=='-').length;
+    const present = cells.filter(c=>c==='P').length;
+    const pct = held ? Math.round((present/held)*1000)/10 : 0;
+    return {student:s, cells, held, present, pct};
+  });
+  return {subject, month, rows};
+}
+
+function renderTeacherReports(teacher){
+  const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
+  if(!state.reportSubject || !subjects.find(s=>s.id===state.reportSubject)) state.reportSubject = subjects[0] ? subjects[0].id : null;
+  if(!state.reportMonth) state.reportMonth = monthsData[monthsData.length-1].prefix;
+
+  let html = '<div class="page-head"><div><h1>Reports</h1><div class="sub">Export attendance as a spreadsheet or a printable report.</div></div></div>';
+
+  if(!subjects.length){
+    html += '<div class="card"><p class="empty">No subjects are assigned to you yet.</p></div>';
+    $('#teacher-content').innerHTML = html;
+    return;
+  }
+
+  html += '<div class="card"><div class="form-row">'
+    + '<div class="field"><label>Subject</label><select id="report-subject">' + subjects.map(su=>'<option value="'+su.id+'" '+(su.id===state.reportSubject?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Month</label><select id="report-month">' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(m.prefix===state.reportMonth?'selected':'')+'>'+m.name+' 2026</option>').join('') + '</select></div>'
+    + '</div><div class="btn-row"><button class="btn btn-primary" id="export-csv-btn">Download as Excel (CSV)</button><button class="btn btn-ghost" id="print-report-btn">Print / save as PDF</button></div></div>';
+
+  $('#teacher-content').innerHTML = html;
+
+  $('#report-subject').addEventListener('change', e=>{ state.reportSubject=e.target.value; renderTeacherReports(teacher); });
+  $('#report-month').addEventListener('change', e=>{ state.reportMonth=e.target.value; renderTeacherReports(teacher); });
+  $('#export-csv-btn').addEventListener('click', ()=>{
+    const {subject, month, rows} = subjectMonthMatrix(state.reportSubject, state.reportMonth);
+    const header = ['Reg No','Name'].concat(month.dates.map(d=>d.slice(5))).concat(['Present','Held','Percentage']);
+    const body = rows.map(r=>[r.student.regNo, r.student.name].concat(r.cells).concat([r.present, r.held, r.pct+'%']));
+    downloadCSV('Attendance_'+subject.code+'_'+month.name+'2026.csv', [header].concat(body));
+  });
+  $('#print-report-btn').addEventListener('click', ()=>{
+    const {subject, month, rows} = subjectMonthMatrix(state.reportSubject, state.reportMonth);
+    const cls = DB.classes.find(c=>c.id===subject.classId);
+    const html2 = '<h2 style="font-family:\'Source Serif 4\',serif;margin-bottom:2px;">Attendance Ledger College</h2>'
+      + '<div style="color:#555;margin-bottom:16px;">'+cls.course+' · Semester '+cls.semester+' · Section '+cls.section+'</div>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+      + '<tr><td><strong>Subject:</strong> '+subject.name+' ('+subject.code+')</td><td><strong>Teacher:</strong> '+teacher.name+'</td></tr>'
+      + '<tr><td><strong>Month:</strong> '+month.name+' 2026</td><td><strong>Generated:</strong> '+new Date().toDateString()+'</td></tr>'
+      + '</table>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
+      + '<thead><tr style="border-bottom:2px solid #000;"><th style="text-align:left;padding:6px;">Reg no.</th><th style="text-align:left;padding:6px;">Name</th><th style="padding:6px;">Present</th><th style="padding:6px;">Held</th><th style="padding:6px;">%</th></tr></thead>'
+      + '<tbody>' + rows.map(r=>'<tr style="border-bottom:1px solid #ccc;"><td style="padding:6px;">'+r.student.regNo+'</td><td style="padding:6px;">'+r.student.name+'</td><td style="padding:6px;text-align:center;">'+r.present+'</td><td style="padding:6px;text-align:center;">'+r.held+'</td><td style="padding:6px;text-align:center;">'+r.pct+'%</td></tr>').join('') + '</tbody>'
+      + '</table>';
+    printReport(html2);
+  });
+}
+
+/* ============================= ADMIN DASHBOARD ============================= */
+function renderAdminSidebar(){
+  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['attendance','Attendance'],['analytics','Analytics']];
+  $('#admin-sidebar').innerHTML = '<div class="side-title">Administrator</div><div class="side-sub">Full access</div>'
+    + tabs.map(t=>'<button class="sidebar-link '+(state.adminTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
+  $all('#admin-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.adminTab = btn.dataset.tab;
+    state.studentForm=null; state.teacherForm=null; state.subjectForm=null; state.classForm=null;
+    renderAdminSidebar();
+    renderAdminContent();
+  }));
+}
+
+function renderAdminContent(){
+  const map = {
+    overview:renderAdminOverview, students:renderAdminStudents, teachers:renderAdminTeachers,
+    subjects:renderAdminSubjects, classes:renderAdminClasses, attendance:renderAdminAttendance, analytics:renderAdminAnalytics
+  };
+  map[state.adminTab]();
+}
+
+function renderAdminOverview(){
+  const overall = overallStatsAll();
+  const latestDate = DB.attendance.reduce((max,a)=> a.date>max?a.date:max, '0000-00-00');
+  const latestRecs = DB.attendance.filter(a=>a.date===latestDate);
+  const latestPct = latestRecs.length ? Math.round((latestRecs.filter(r=>r.status==='P').length/latestRecs.length)*100) : 0;
+
+  let html = '<div class="page-head"><div><h1>Overview</h1><div class="sub">Institution-wide snapshot</div></div></div>';
+  html += '<div class="stat-grid">'
+    + '<div class="stat-card"><div class="num">'+DB.students.length+'</div><div class="label">Total students</div></div>'
+    + '<div class="stat-card"><div class="num">'+DB.teachers.length+'</div><div class="label">Total teachers</div></div>'
+    + '<div class="stat-card"><div class="num">'+DB.subjects.length+'</div><div class="label">Total subjects</div></div>'
+    + '<div class="stat-card"><div class="num">'+DB.classes.length+'</div><div class="label">Total classes</div></div>'
+    + '<div class="stat-card"><div class="num">'+latestPct+'%</div><div class="label">Attendance on '+latestDate+'</div></div>'
+    + '<div class="stat-card"><div class="num">'+overall.pct+'%</div><div class="label">Average attendance</div></div>'
+    + '</div>';
+  html += '<div class="grid-2">'
+    + '<div class="card"><h3>Subject performance</h3>' + barListHtml(DB.subjects.map(su=>({label:su.name, pct:subjectOverallStats(su.id).pct}))) + '</div>'
+    + '<div class="card"><h3>Class comparison</h3>' + barListHtml(DB.classes.map(c=>({label:c.course+' S'+c.semester+'-'+c.section, pct:classOverallStats(c.id).pct}))) + '</div>'
+    + '</div>';
+  $('#admin-content').innerHTML = html;
+}
+
+/* --- Students --- */
+function studentFormHtml(){
+  const editing = state.studentForm;
+  const s = editing || {regNo:'', name:'', dob:'', gender:'Female', email:'', phone:'', admissionYear:'2024', status:'Active', classId:DB.classes[0].id};
+  return '<h3>'+(editing?'Edit student':'Add student')+'</h3>'
+    + '<div class="form-grid">'
+    + '<div class="field"><label>Register number</label><input id="f-regNo" value="'+s.regNo+'"/></div>'
+    + '<div class="field"><label>Name</label><input id="f-name" value="'+s.name+'"/></div>'
+    + '<div class="field"><label>Date of birth</label><input id="f-dob" type="date" value="'+s.dob+'"/></div>'
+    + '<div class="field"><label>Gender</label><select id="f-gender">' + ['Female','Male','Other'].map(g=>'<option '+(g===s.gender?'selected':'')+'>'+g+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Class</label><select id="f-classId">' + DB.classes.map(c=>'<option value="'+c.id+'" '+(c.id===s.classId?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Email</label><input id="f-email" value="'+s.email+'"/></div>'
+    + '<div class="field"><label>Phone</label><input id="f-phone" value="'+s.phone+'"/></div>'
+    + '<div class="field"><label>Admission year</label><input id="f-admissionYear" value="'+s.admissionYear+'"/></div>'
+    + '<div class="field"><label>Status</label><select id="f-status">' + ['Active','Inactive'].map(g=>'<option '+(g===s.status?'selected':'')+'>'+g+'</option>').join('') + '</select></div>'
+    + '</div><div class="btn-row"><button class="btn btn-primary" id="save-student-btn">'+(editing?'Save changes':'Add student')+'</button>'
+    + (editing?'<button class="btn btn-ghost" id="cancel-student-btn">Cancel</button>':'') + '</div>';
+}
+
+function renderAdminStudents(){
+  let html = '<div class="page-head"><div><h1>Students</h1><div class="sub">'+DB.students.length+' records</div></div>'
+    + '<div class="btn-row"><label class="btn btn-ghost btn-sm file-btn">Import CSV<input type="file" id="import-students" accept=".csv" hidden/></label>'
+    + '<button class="btn btn-ghost btn-sm" id="export-students">Export CSV</button></div></div>';
+  html += '<div class="card" id="student-form-card">' + studentFormHtml() + '</div>';
+  html += '<div class="card"><input id="student-search" placeholder="Search by name or reg. no." value="'+state.studentSearch+'" style="margin-bottom:14px;max-width:320px;"/><div id="student-table-wrap"></div></div>';
+
+  $('#admin-content').innerHTML = html;
+  bindStudentFormEvents();
+  $('#student-search').addEventListener('input', e=>{ state.studentSearch=e.target.value; renderStudentTable(); });
+  $('#export-students').addEventListener('click', ()=>{
+    const header = ['Reg No','Name','DOB','Gender','Course','Dept','Semester','Section','Email','Phone','Admission Year','Status'];
+    const rows = DB.students.map(s=>[s.regNo,s.name,s.dob,s.gender,s.course,s.dept,s.semester,s.section,s.email,s.phone,s.admissionYear,s.status]);
+    downloadCSV('Students.csv', [header].concat(rows));
+  });
+  $('#import-students').addEventListener('change', handleImportStudents);
+  renderStudentTable();
+}
+
+function bindStudentFormEvents(){
+  $('#save-student-btn').addEventListener('click', ()=>{
+    const classId = $('#f-classId').value;
+    const cls = DB.classes.find(c=>c.id===classId);
+    const data = {
+      regNo:$('#f-regNo').value.trim(), name:$('#f-name').value.trim(), dob:$('#f-dob').value,
+      gender:$('#f-gender').value, classId, course:cls.course, dept:'Commerce', semester:cls.semester, section:cls.section,
+      email:$('#f-email').value.trim(), phone:$('#f-phone').value.trim(), admissionYear:$('#f-admissionYear').value.trim(), status:$('#f-status').value
+    };
+    if(!data.name || !data.regNo){ alert('Register number and name are required.'); return; }
+    if(state.studentForm) Object.assign(state.studentForm, data);
+    else DB.students.push(Object.assign({id:uid('ST')}, data));
+    state.studentForm = null;
+    renderAdminStudents();
+  });
+  const cancelBtn = $('#cancel-student-btn');
+  if(cancelBtn) cancelBtn.addEventListener('click', ()=>{ state.studentForm=null; renderAdminStudents(); });
+}
+
+function renderStudentTable(){
+  let list = DB.students;
+  if(state.studentSearch){
+    const q = state.studentSearch.toLowerCase();
+    list = list.filter(s=>s.name.toLowerCase().includes(q) || s.regNo.toLowerCase().includes(q));
+  }
+  const html = '<table class="table"><thead><tr><th>Reg. no.</th><th>Name</th><th>Class</th><th>Status</th><th></th></tr></thead><tbody>'
+    + (list.map(s=>{
+        const cls = DB.classes.find(c=>c.id===s.classId);
+        return '<tr><td>'+s.regNo+'</td><td>'+s.name+'</td><td>'+(cls?cls.course+' S'+cls.semester+'-'+cls.section:'—')+'</td>'
+          + '<td><span class="badge badge-'+(s.status==='Active'?'success':'danger')+'">'+s.status+'</span></td>'
+          + '<td><button class="btn btn-ghost btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn btn-ghost btn-sm" data-del="'+s.id+'">Delete</button></td></tr>';
+      }).join('') || '<tr><td colspan="5" class="empty">No students found.</td></tr>')
+    + '</tbody></table>';
+  $('#student-table-wrap').innerHTML = html;
+  $all('[data-edit]').forEach(b=>b.addEventListener('click', ()=>{
+    state.studentForm = DB.students.find(s=>s.id===b.dataset.edit);
+    renderAdminStudents();
+    $('#student-form-card').scrollIntoView({behavior:'smooth', block:'start'});
+  }));
+  $all('[data-del]').forEach(b=>b.addEventListener('click', ()=>{
+    if(confirm('Delete this student?')){
+      DB.students = DB.students.filter(s=>s.id!==b.dataset.del);
+      renderStudentTable();
+    }
+  }));
+}
+
+function handleImportStudents(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    const lines = reader.result.split(/\r?\n/).filter(l=>l.trim());
+    lines.slice(1).forEach(line=>{
+      const cols = line.split(',');
+      if(cols.length<2) return;
+      const regNo=cols[0], name=cols[1], dob=cols[2], gender=cols[3], course=cols[4], dept=cols[5], semester=cols[6], section=cols[7], email=cols[8], phone=cols[9], admissionYear=cols[10], status=cols[11];
+      const cls = DB.classes.find(c=>c.course===course && String(c.semester)===String(semester) && c.section===section) || DB.classes[0];
+      DB.students.push({
+        id:uid('ST'), regNo:regNo||'', name:name||'Unnamed', dob:dob||'', gender:gender||'Other',
+        course:cls.course, dept:dept||'Commerce', semester:cls.semester, section:cls.section,
+        email:email||'', phone:phone||'', admissionYear:admissionYear||'', status:status||'Active', classId:cls.id
+      });
+    });
+    renderAdminStudents();
+  };
+  reader.readAsText(file);
+}
+
+/* --- Teachers --- */
+function teacherFormHtml(){
+  const editing = state.teacherForm;
+  const t = editing || {teacherId:'', name:'', password:'', status:'Active'};
+  const assignedIds = DB.subjects.filter(su=>su.teacherId === (editing?editing.id:null)).map(su=>su.id);
+  return '<h3>'+(editing?'Edit teacher':'Add teacher')+'</h3>'
+    + '<div class="form-grid">'
+    + '<div class="field"><label>Teacher ID</label><input id="f-teacherId" value="'+t.teacherId+'"/></div>'
+    + '<div class="field"><label>Name</label><input id="f-tname" value="'+t.name+'"/></div>'
+    + '<div class="field"><label>Password</label><input id="f-tpass" value="'+t.password+'"/></div>'
+    + '<div class="field"><label>Status</label><select id="f-tstatus">' + ['Active','Inactive'].map(g=>'<option '+(g===t.status?'selected':'')+'>'+g+'</option>').join('') + '</select></div>'
+    + '</div>'
+    + '<div class="field"><label>Assigned subjects</label><select id="f-tsubjects" multiple size="4">'
+    + DB.subjects.map(su=>'<option value="'+su.id+'" '+(assignedIds.includes(su.id)?'selected':'')+'>'+su.name+' ('+su.code+')</option>').join('')
+    + '</select></div>'
+    + '<div class="btn-row"><button class="btn btn-primary" id="save-teacher-btn">'+(editing?'Save changes':'Add teacher')+'</button>'
+    + (editing?'<button class="btn btn-ghost" id="cancel-teacher-btn">Cancel</button>':'') + '</div>';
+}
+
+function renderAdminTeachers(){
+  let html = '<div class="page-head"><div><h1>Teachers</h1><div class="sub">'+DB.teachers.length+' records</div></div></div>';
+  html += '<div class="card">' + teacherFormHtml() + '</div>';
+  html += '<div class="card"><table class="table"><thead><tr><th>Teacher ID</th><th>Name</th><th>Subjects</th><th>Status</th><th></th></tr></thead><tbody>'
+    + DB.teachers.map(t=>{
+        const subs = DB.subjects.filter(su=>su.teacherId===t.id).map(su=>su.name).join(', ') || '—';
+        return '<tr><td>'+t.teacherId+'</td><td>'+t.name+'</td><td>'+subs+'</td>'
+          + '<td><span class="badge badge-'+(t.status==='Active'?'success':'danger')+'">'+t.status+'</span></td>'
+          + '<td><button class="btn btn-ghost btn-sm" data-edit-t="'+t.id+'">Edit</button> <button class="btn btn-ghost btn-sm" data-del-t="'+t.id+'">Delete</button></td></tr>';
+      }).join('')
+    + '</tbody></table></div>';
+
+  $('#admin-content').innerHTML = html;
+  bindTeacherFormEvents();
+  $all('[data-edit-t]').forEach(b=>b.addEventListener('click', ()=>{ state.teacherForm = DB.teachers.find(t=>t.id===b.dataset.editT); renderAdminTeachers(); }));
+  $all('[data-del-t]').forEach(b=>b.addEventListener('click', ()=>{
+    if(confirm('Delete this teacher?')){
+      DB.teachers = DB.teachers.filter(t=>t.id!==b.dataset.delT);
+      renderAdminTeachers();
+    }
+  }));
+}
+
+function bindTeacherFormEvents(){
+  $('#save-teacher-btn').addEventListener('click', ()=>{
+    const selected = Array.from($('#f-tsubjects').selectedOptions).map(o=>o.value);
+    const data = {teacherId:$('#f-teacherId').value.trim(), name:$('#f-tname').value.trim(), password:$('#f-tpass').value, status:$('#f-tstatus').value};
+    if(!data.name || !data.teacherId){ alert('Teacher ID and name are required.'); return; }
+    let teacherId;
+    if(state.teacherForm){ Object.assign(state.teacherForm, data); teacherId = state.teacherForm.id; }
+    else { const newT = Object.assign({id:uid('TC')}, data); DB.teachers.push(newT); teacherId = newT.id; }
+    DB.subjects.forEach(su=>{
+      if(selected.includes(su.id)) su.teacherId = teacherId;
+      else if(su.teacherId===teacherId) su.teacherId = null;
+    });
+    state.teacherForm = null;
+    renderAdminTeachers();
+  });
+  const c = $('#cancel-teacher-btn');
+  if(c) c.addEventListener('click', ()=>{ state.teacherForm=null; renderAdminTeachers(); });
+}
+
+/* --- Subjects --- */
+function subjectFormHtml(){
+  const editing = state.subjectForm;
+  const s = editing || {code:'', name:'', semester:2, teacherId:DB.teachers[0]?DB.teachers[0].id:'', classId:DB.classes[0].id};
+  return '<h3>'+(editing?'Edit subject':'Add subject')+'</h3>'
+    + '<div class="form-grid">'
+    + '<div class="field"><label>Subject code</label><input id="f-scode" value="'+s.code+'"/></div>'
+    + '<div class="field"><label>Subject name</label><input id="f-sname" value="'+s.name+'"/></div>'
+    + '<div class="field"><label>Semester</label><input id="f-ssem" type="number" min="1" max="4" value="'+s.semester+'"/></div>'
+    + '<div class="field"><label>Teacher</label><select id="f-steacher">' + DB.teachers.map(t=>'<option value="'+t.id+'" '+(t.id===s.teacherId?'selected':'')+'>'+t.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Class</label><select id="f-sclass">' + DB.classes.map(c=>'<option value="'+c.id+'" '+(c.id===s.classId?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('') + '</select></div>'
+    + '</div><div class="btn-row"><button class="btn btn-primary" id="save-subject-btn">'+(editing?'Save changes':'Add subject')+'</button>'
+    + (editing?'<button class="btn btn-ghost" id="cancel-subject-btn">Cancel</button>':'') + '</div>';
+}
+
+function renderAdminSubjects(){
+  let html = '<div class="page-head"><div><h1>Subjects</h1><div class="sub">'+DB.subjects.length+' records</div></div></div>';
+  html += '<div class="card">' + subjectFormHtml() + '</div>';
+  html += '<div class="card"><table class="table"><thead><tr><th>Code</th><th>Subject</th><th>Semester</th><th>Teacher</th><th>Class</th><th></th></tr></thead><tbody>'
+    + DB.subjects.map(su=>{
+        const t = DB.teachers.find(x=>x.id===su.teacherId);
+        const c = DB.classes.find(x=>x.id===su.classId);
+        return '<tr><td>'+su.code+'</td><td>'+su.name+'</td><td>'+su.semester+'</td><td>'+(t?t.name:'Unassigned')+'</td><td>'+(c?c.course+' S'+c.semester+'-'+c.section:'—')+'</td>'
+          + '<td><button class="btn btn-ghost btn-sm" data-edit-s="'+su.id+'">Edit</button> <button class="btn btn-ghost btn-sm" data-del-s="'+su.id+'">Delete</button></td></tr>';
+      }).join('')
+    + '</tbody></table></div>';
+
+  $('#admin-content').innerHTML = html;
+  bindSubjectFormEvents();
+  $all('[data-edit-s]').forEach(b=>b.addEventListener('click', ()=>{ state.subjectForm = DB.subjects.find(s=>s.id===b.dataset.editS); renderAdminSubjects(); }));
+  $all('[data-del-s]').forEach(b=>b.addEventListener('click', ()=>{
+    if(confirm('Delete this subject?')){
+      DB.subjects = DB.subjects.filter(s=>s.id!==b.dataset.delS);
+      renderAdminSubjects();
+    }
+  }));
+}
+
+function bindSubjectFormEvents(){
+  $('#save-subject-btn').addEventListener('click', ()=>{
+    const data = {code:$('#f-scode').value.trim(), name:$('#f-sname').value.trim(), semester:Number($('#f-ssem').value)||1, teacherId:$('#f-steacher').value, classId:$('#f-sclass').value};
+    if(!data.code || !data.name){ alert('Subject code and name are required.'); return; }
+    if(state.subjectForm) Object.assign(state.subjectForm, data);
+    else DB.subjects.push(Object.assign({id:uid('SU')}, data));
+    state.subjectForm = null;
+    renderAdminSubjects();
+  });
+  const c = $('#cancel-subject-btn');
+  if(c) c.addEventListener('click', ()=>{ state.subjectForm=null; renderAdminSubjects(); });
+}
+
+/* --- Classes --- */
+function classFormHtml(){
+  const editing = state.classForm;
+  const c = editing || {course:'M.Com', semester:1, section:'A', year:'2025-26'};
+  return '<h3>'+(editing?'Edit class':'Add class')+'</h3>'
+    + '<div class="form-grid">'
+    + '<div class="field"><label>Course</label><input id="f-ccourse" value="'+c.course+'"/></div>'
+    + '<div class="field"><label>Semester</label><input id="f-csem" type="number" min="1" max="8" value="'+c.semester+'"/></div>'
+    + '<div class="field"><label>Section</label><input id="f-csection" value="'+c.section+'"/></div>'
+    + '<div class="field"><label>Academic year</label><input id="f-cyear" value="'+c.year+'"/></div>'
+    + '</div><div class="btn-row"><button class="btn btn-primary" id="save-class-btn">'+(editing?'Save changes':'Add class')+'</button>'
+    + (editing?'<button class="btn btn-ghost" id="cancel-class-btn">Cancel</button>':'') + '</div>';
+}
+
+function renderAdminClasses(){
+  let html = '<div class="page-head"><div><h1>Classes</h1><div class="sub">'+DB.classes.length+' records</div></div></div>';
+  html += '<div class="card">' + classFormHtml() + '</div>';
+  html += '<div class="card"><table class="table"><thead><tr><th>Course</th><th>Semester</th><th>Section</th><th>Year</th><th>Students</th><th></th></tr></thead><tbody>'
+    + DB.classes.map(c=>{
+        const count = DB.students.filter(s=>s.classId===c.id).length;
+        return '<tr><td>'+c.course+'</td><td>'+c.semester+'</td><td>'+c.section+'</td><td>'+c.year+'</td><td>'+count+'</td>'
+          + '<td><button class="btn btn-ghost btn-sm" data-edit-c="'+c.id+'">Edit</button> <button class="btn btn-ghost btn-sm" data-del-c="'+c.id+'">Delete</button></td></tr>';
+      }).join('')
+    + '</tbody></table></div>';
+
+  $('#admin-content').innerHTML = html;
+  bindClassFormEvents();
+  $all('[data-edit-c]').forEach(b=>b.addEventListener('click', ()=>{ state.classForm = DB.classes.find(c=>c.id===b.dataset.editC); renderAdminClasses(); }));
+  $all('[data-del-c]').forEach(b=>b.addEventListener('click', ()=>{
+    if(confirm('Delete this class? Students and subjects linked to it will remain but show as unassigned.')){
+      DB.classes = DB.classes.filter(c=>c.id!==b.dataset.delC);
+      renderAdminClasses();
+    }
+  }));
+}
+
+function bindClassFormEvents(){
+  $('#save-class-btn').addEventListener('click', ()=>{
+    const data = {course:$('#f-ccourse').value.trim(), semester:Number($('#f-csem').value)||1, section:$('#f-csection').value.trim(), year:$('#f-cyear').value.trim()};
+    if(!data.course || !data.section){ alert('Course and section are required.'); return; }
+    if(state.classForm) Object.assign(state.classForm, data);
+    else DB.classes.push(Object.assign({id:uid('CL')}, data));
+    state.classForm = null;
+    renderAdminClasses();
+  });
+  const c = $('#cancel-class-btn');
+  if(c) c.addEventListener('click', ()=>{ state.classForm=null; renderAdminClasses(); });
+}
+
+/* --- Attendance (master) --- */
+function renderAdminAttendance(){
+  const f = state.adminAttFilters;
+  let html = '<div class="page-head"><div><h1>Attendance</h1><div class="sub">Search, correct or export attendance across the institution.</div></div></div>';
+  html += '<div class="card"><div class="form-row">'
+    + '<div class="field"><label>Class</label><select id="att-class"><option value="all">All classes</option>' + DB.classes.map(c=>'<option value="'+c.id+'" '+(f.classId===c.id?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Subject</label><select id="att-subject"><option value="all">All subjects</option>' + DB.subjects.map(su=>'<option value="'+su.id+'" '+(f.subjectId===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Teacher</label><select id="att-teacher"><option value="all">All teachers</option>' + DB.teachers.map(t=>'<option value="'+t.id+'" '+(f.teacherId===t.id?'selected':'')+'>'+t.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Month</label><select id="att-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(f.month===m.prefix?'selected':'')+'>'+m.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Student</label><input id="att-search" placeholder="Search by name or reg. no." value="'+f.q+'"/></div>'
+    + '</div><div class="btn-row"><button class="btn btn-ghost btn-sm" id="att-export">Export filtered (CSV)</button><button class="btn btn-ghost btn-sm" id="att-print">Print report</button></div></div>'
+    + '<div id="att-results"></div>';
+
+  $('#admin-content').innerHTML = html;
+  $('#att-class').addEventListener('change', e=>{ f.classId=e.target.value; renderAdminAttResults(); });
+  $('#att-subject').addEventListener('change', e=>{ f.subjectId=e.target.value; renderAdminAttResults(); });
+  $('#att-teacher').addEventListener('change', e=>{ f.teacherId=e.target.value; renderAdminAttResults(); });
+  $('#att-month').addEventListener('change', e=>{ f.month=e.target.value; renderAdminAttResults(); });
+  $('#att-search').addEventListener('input', e=>{ f.q=e.target.value; renderAdminAttResults(); });
+  $('#att-export').addEventListener('click', exportAdminAttendance);
+  $('#att-print').addEventListener('click', printAdminAttendance);
+
+  renderAdminAttResults();
+}
+
+function filteredAdminAttendance(){
+  const f = state.adminAttFilters;
+  let recs = DB.attendance.slice();
+  if(f.classId!=='all'){
+    const ids = new Set(DB.students.filter(s=>s.classId===f.classId).map(s=>s.id));
+    recs = recs.filter(a=>ids.has(a.studentId));
+  }
+  if(f.subjectId!=='all') recs = recs.filter(a=>a.subjectId===f.subjectId);
+  if(f.teacherId!=='all') recs = recs.filter(a=>a.teacherId===f.teacherId);
+  if(f.month!=='all') recs = recs.filter(a=>a.date.startsWith(f.month));
+  if(f.q){
+    const q = f.q.toLowerCase();
+    recs = recs.filter(a=>{ const s=DB.students.find(st=>st.id===a.studentId); return s && (s.name.toLowerCase().includes(q) || s.regNo.toLowerCase().includes(q)); });
+  }
+  return recs.sort((a,b)=> a.date<b.date?1:-1);
+}
+
+function renderAdminAttResults(){
+  const all = filteredAdminAttendance();
+  const held = all.length;
+  const present = all.filter(r=>r.status==='P').length;
+  const pct = held ? Math.round((present/held)*1000)/10 : 0;
+  const shown = all.slice(0, 150);
+
+  const html = '<div class="card"><div class="sub" style="margin-bottom:12px;">'+held+' matching records · '+pct+'% present'+(held>150?' · showing first 150':'')+'</div>'
+    + '<table class="table"><thead><tr><th>Date</th><th>Period</th><th>Reg. no.</th><th>Student</th><th>Subject</th><th>Teacher</th><th>Status</th><th></th></tr></thead><tbody>'
+    + (shown.map(r=>{
+        const s = DB.students.find(st=>st.id===r.studentId);
+        const su = DB.subjects.find(x=>x.id===r.subjectId);
+        const t = DB.teachers.find(x=>x.id===r.teacherId);
+        return '<tr><td>'+r.date+'</td><td>'+r.period+'</td><td>'+(s?s.regNo:'—')+'</td><td>'+(s?s.name:'—')+'</td><td>'+(su?su.name:'—')+'</td><td>'+(t?t.name:'—')+'</td>'
+          + '<td><span class="badge badge-'+(r.status==='P'?'success':'danger')+'">'+(r.status==='P'?'Present':'Absent')+'</span></td>'
+          + '<td><button class="btn btn-ghost btn-sm" data-aflip="'+r.id+'">Flip</button> <button class="btn btn-ghost btn-sm" data-adel="'+r.id+'">Delete</button></td></tr>';
+      }).join('') || '<tr><td colspan="8" class="empty">No records match these filters.</td></tr>')
+    + '</tbody></table></div>';
+
+  $('#att-results').innerHTML = html;
+  $all('[data-aflip]').forEach(b=>b.addEventListener('click', ()=>{
+    const rec = DB.attendance.find(a=>a.id===b.dataset.aflip);
+    rec.status = rec.status==='P' ? 'A' : 'P';
+    renderAdminAttResults();
+  }));
+  $all('[data-adel]').forEach(b=>b.addEventListener('click', ()=>{
+    DB.attendance = DB.attendance.filter(a=>a.id!==b.dataset.adel);
+    renderAdminAttResults();
+  }));
+}
+
+function exportAdminAttendance(){
+  const recs = filteredAdminAttendance();
+  const header = ['Date','Period','Reg No','Student','Subject','Teacher','Status'];
+  const rows = recs.map(r=>{
+    const s = DB.students.find(st=>st.id===r.studentId);
+    const su = DB.subjects.find(x=>x.id===r.subjectId);
+    const t = DB.teachers.find(x=>x.id===r.teacherId);
+    return [r.date, r.period, s?s.regNo:'', s?s.name:'', su?su.name:'', t?t.name:'', r.status==='P'?'Present':'Absent'];
+  });
+  downloadCSV('Attendance_Report.csv', [header].concat(rows));
+}
+
+function printAdminAttendance(){
+  const recs = filteredAdminAttendance().slice(0, 300);
+  const held = recs.length;
+  const present = recs.filter(r=>r.status==='P').length;
+  const pct = held ? Math.round((present/held)*1000)/10 : 0;
+  const html = '<h2 style="font-family:\'Source Serif 4\',serif;margin-bottom:2px;">Attendance Ledger College</h2>'
+    + '<div style="color:#555;margin-bottom:16px;">Administrator report · Generated '+new Date().toDateString()+'</div>'
+    + '<div style="margin-bottom:12px;">'+held+' records · '+pct+'% present</div>'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+    + '<thead><tr style="border-bottom:2px solid #000;"><th style="text-align:left;padding:6px;">Date</th><th style="text-align:left;padding:6px;">Reg no.</th><th style="text-align:left;padding:6px;">Student</th><th style="text-align:left;padding:6px;">Subject</th><th style="padding:6px;">Status</th></tr></thead>'
+    + '<tbody>' + recs.map(r=>{
+        const s = DB.students.find(st=>st.id===r.studentId);
+        const su = DB.subjects.find(x=>x.id===r.subjectId);
+        return '<tr style="border-bottom:1px solid #ccc;"><td style="padding:6px;">'+r.date+'</td><td style="padding:6px;">'+(s?s.regNo:'')+'</td><td style="padding:6px;">'+(s?s.name:'')+'</td><td style="padding:6px;">'+(su?su.name:'')+'</td><td style="padding:6px;text-align:center;">'+(r.status==='P'?'Present':'Absent')+'</td></tr>';
+      }).join('') + '</tbody></table>';
+  printReport(html);
+}
+
+/* --- Analytics --- */
+function renderAdminAnalytics(){
+  const overall = overallStatsAll();
+  const monthly = monthsData.map(m=>{
+    const recs = DB.attendance.filter(a=>a.date.startsWith(m.prefix));
+    const held = recs.length;
+    const present = recs.filter(r=>r.status==='P').length;
+    return {name:m.name, pct: held ? Math.round((present/held)*100) : 0};
+  });
+
+  let html = '<div class="page-head"><div><h1>Analytics</h1><div class="sub">Institution-wide attendance trends</div></div></div>';
+  html += '<div class="grid-2">'
+    + '<div class="card"><h3>Overall attendance</h3>' + donutHtml(overall.pct, 'Present · '+overall.present, 'Absent · '+(overall.held-overall.present)) + '</div>'
+    + '<div class="card"><h3>Monthly attendance trend</h3>' + trendHtml(monthly) + '</div>'
+    + '</div>';
+  html += '<div class="grid-2">'
+    + '<div class="card"><h3>Subject performance</h3>' + barListHtml(DB.subjects.map(su=>({label:su.name, pct:subjectOverallStats(su.id).pct}))) + '</div>'
+    + '<div class="card"><h3>Class comparison</h3>' + barListHtml(DB.classes.map(c=>({label:c.course+' S'+c.semester+'-'+c.section, pct:classOverallStats(c.id).pct}))) + '</div>'
+    + '</div>';
+  $('#admin-content').innerHTML = html;
+}
+
+/* ============================= INIT ============================= */
+document.addEventListener('DOMContentLoaded', ()=>{
+  seedDB();
+  generateAttendance();
+  populateLoginSelects();
+  bindLoginEvents();
+});
+</script>
+</body>
+</html>
