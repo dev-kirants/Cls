@@ -157,6 +157,26 @@
   .mark-toolbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;}
   .save-confirm{margin-left:12px; color:var(--success); font-size:0.84rem;}
 
+  /* ---------- Calendar ---------- */
+  .cal-toolbar{display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:10px;}
+  .cal-legend{display:flex; gap:14px; flex-wrap:wrap; font-size:0.78rem; color:var(--muted);}
+  .cal-legend div{display:flex; align-items:center; gap:6px;}
+  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
+  .cal-dow{text-align:center; font-size:0.72rem; font-weight:600; color:var(--muted); padding-bottom:4px;}
+  .cal-cell{aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); font-family:var(--font-sans); cursor:default; padding:2px;}
+  .cal-cell.cal-clickable{cursor:pointer;}
+  .cal-cell.cal-clickable:hover{border-color:var(--primary);}
+  .cal-cell.cal-selected{outline:2px solid var(--primary); outline-offset:-2px;}
+  .cal-cell.cal-empty{border:none; background:transparent;}
+  .cal-cell.cal-none{color:var(--muted); background:var(--paper);}
+  .cal-cell.cal-success{background:var(--success-tint); border-color:var(--success);}
+  .cal-cell.cal-warning{background:var(--warning-tint); border-color:var(--warning);}
+  .cal-cell.cal-danger{background:var(--danger-tint); border-color:var(--danger);}
+  .cal-daynum{font-size:0.8rem; font-weight:600;}
+  .cal-pct{font-size:0.66rem; font-weight:600;}
+  .cal-detail-list{display:flex; flex-direction:column; gap:8px;}
+  .cal-detail-row{display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--paper); border-radius:var(--radius); font-size:0.85rem;}
+
   /* ---------- Print ---------- */
   #print-area{position:absolute; left:-9999px; top:0; width:800px; background:#fff; color:#000; padding:24px; font-family:var(--font-sans);}
   @media print{
@@ -222,7 +242,10 @@
 </section>
 
 <section id="view-student" class="view">
-  <div class="main" id="student-content"></div>
+  <div class="app-shell">
+    <nav class="sidebar" id="student-sidebar"></nav>
+    <div class="main" id="student-content"></div>
+  </div>
 </section>
 
 <section id="view-teacher" class="view">
@@ -407,6 +430,50 @@ function trendHtml(trend){
   ).join('') + '</div>';
 }
 
+function monthMeta(prefix){
+  const parts = prefix.split('-');
+  return {year:Number(parts[0]), month:Number(parts[1])};
+}
+
+function daysInMonthList(prefix){
+  const {year, month} = monthMeta(prefix);
+  const numDays = new Date(year, month, 0).getDate();
+  const out = [];
+  for(let d=1; d<=numDays; d++) out.push(prefix+'-'+String(d).padStart(2,'0'));
+  return out;
+}
+
+/* dayStatusFn(dateStr) should return null (no class held) or {held, present, pct} */
+function calendarHtml(prefix, dayStatusFn, selectedDate){
+  const {year, month} = monthMeta(prefix);
+  const first = new Date(year, month-1, 1);
+  const startWeekday = (first.getDay()+6)%7; // Monday = 0
+  const dow = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  let cells = dow.map(d=>'<div class="cal-dow">'+d+'</div>').join('');
+  for(let i=0;i<startWeekday;i++) cells += '<div class="cal-cell cal-empty"></div>';
+  daysInMonthList(prefix).forEach(dateStr=>{
+    const d = Number(dateStr.slice(-2));
+    const info = dayStatusFn(dateStr);
+    let cls = 'cal-cell';
+    let label = '';
+    if(info && info.held){
+      const st = statusFor(info.pct);
+      cls += ' cal-'+st.cls+' cal-clickable';
+      if(dateStr===selectedDate) cls += ' cal-selected';
+      label = '<span class="cal-pct">'+info.pct+'%</span>';
+      cells += '<button type="button" class="'+cls+'" data-caldate="'+dateStr+'"><span class="cal-daynum">'+d+'</span>'+label+'</button>';
+    } else {
+      cells += '<div class="cal-cell cal-none"><span class="cal-daynum">'+d+'</span></div>';
+    }
+  });
+  return '<div class="cal-legend">'
+    + '<div><span class="dot" style="background:var(--success)"></span>Good (≥85%)</div>'
+    + '<div><span class="dot" style="background:var(--warning)"></span>Watch (75–84%)</div>'
+    + '<div><span class="dot" style="background:var(--danger)"></span>Critical (&lt;75%)</div>'
+    + '<div><span class="dot" style="background:var(--line)"></span>No class held</div>'
+    + '</div><div class="cal-grid" style="margin-top:12px;">' + cells + '</div>';
+}
+
 function downloadCSV(filename, rows){
   const csv = rows.map(r=>r.map(cell=>{
     const s = String(cell===undefined || cell===null ? '' : cell);
@@ -428,13 +495,16 @@ function printReport(html){
 /* ============================= APP STATE ============================= */
 const state = {
   role:null, studentId:null, teacherId:null,
-  teacherTab:'dashboard', adminTab:'overview',
+  studentTab:'dashboard', teacherTab:'dashboard', adminTab:'overview',
   markSubject:null, markDate:'2026-09-14', markPeriod:1, markLoaded:false, markDraft:{},
   recFilters:{subject:'all', month:'all', q:''},
   reportSubject:null, reportMonth:null,
   studentForm:null, studentSearch:'',
   teacherForm:null, subjectForm:null, classForm:null,
-  adminAttFilters:{classId:'all', subjectId:'all', teacherId:'all', month:'all', q:''}
+  adminAttFilters:{classId:'all', subjectId:'all', teacherId:'all', month:'all', q:''},
+  studentCalMonth:null, studentCalDate:null,
+  teacherCalMonth:null, teacherCalSubject:'all', teacherCalDate:null,
+  adminCalMonth:null, adminCalClass:'all', adminCalDate:null
 };
 
 /* ============================= LOGIN / NAV ============================= */
@@ -482,13 +552,30 @@ function enterApp(){
   $('#view-'+state.role).classList.add('active');
   $('#topbar').style.display='flex';
   updateTopbarWho();
-  if(state.role==='student') renderStudent();
+  if(state.role==='student'){ renderStudentSidebar(); renderStudentContent(); }
   if(state.role==='teacher'){ renderTeacherSidebar(); renderTeacherContent(); }
   if(state.role==='admin'){ renderAdminSidebar(); renderAdminContent(); }
 }
 
 /* ============================= STUDENT DASHBOARD ============================= */
-function renderStudent(){
+function renderStudentSidebar(){
+  const student = DB.students.find(s=>s.id===state.studentId);
+  const tabs = [['dashboard','Dashboard'],['calendar','Calendar']];
+  $('#student-sidebar').innerHTML = '<div class="side-title">'+student.name+'</div><div class="side-sub">'+student.regNo+'</div>'
+    + tabs.map(t=>'<button class="sidebar-link '+(state.studentTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
+  $all('#student-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.studentTab = btn.dataset.tab;
+    renderStudentSidebar();
+    renderStudentContent();
+  }));
+}
+
+function renderStudentContent(){
+  if(state.studentTab==='calendar') return renderStudentCalendar();
+  return renderStudentDashboard();
+}
+
+function renderStudentDashboard(){
   const student = DB.students.find(s=>s.id===state.studentId);
   const cls = DB.classes.find(c=>c.id===student.classId);
   const overall = overallStatsForStudent(student.id);
@@ -527,10 +614,52 @@ function renderStudent(){
   $('#student-content').innerHTML = html;
 }
 
+function studentDayStats(studentId, dateStr){
+  const recs = DB.attendance.filter(a=>a.studentId===studentId && a.date===dateStr);
+  if(!recs.length) return null;
+  const present = recs.filter(r=>r.status==='P').length;
+  return {held:recs.length, present, absent:recs.length-present, pct:Math.round((present/recs.length)*1000)/10, recs};
+}
+
+function renderStudentCalendar(){
+  const student = DB.students.find(s=>s.id===state.studentId);
+  if(!state.studentCalMonth) state.studentCalMonth = monthsData[monthsData.length-1].prefix;
+  const m = state.studentCalMonth;
+
+  let html = '<div class="page-head"><div><h1>Calendar</h1><div class="sub">Day-by-day attendance for '+student.name+'.</div></div></div>';
+  html += '<div class="card"><div class="cal-toolbar"><div class="field" style="margin:0;min-width:180px;"><label>Month</label><select id="scal-month">'
+    + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' 2026</option>').join('')
+    + '</select></div></div>'
+    + calendarHtml(m, d=>studentDayStats(student.id, d), state.studentCalDate)
+    + '</div>';
+
+  html += '<div class="card" id="scal-detail">' + studentCalDetailHtml(student, state.studentCalDate) + '</div>';
+
+  $('#student-content').innerHTML = html;
+
+  $('#scal-month').addEventListener('change', e=>{ state.studentCalMonth = e.target.value; state.studentCalDate=null; renderStudentCalendar(); });
+  $all('[data-caldate]').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.studentCalDate = btn.dataset.caldate;
+    renderStudentCalendar();
+  }));
+}
+
+function studentCalDetailHtml(student, dateStr){
+  if(!dateStr) return '<h3>Select a day</h3><p class="sub">Click any coloured day above to see that day\'s subject-wise attendance.</p>';
+  const day = studentDayStats(student.id, dateStr);
+  if(!day) return '<h3>'+dateStr+'</h3><p class="sub">No classes were held on this day.</p>';
+  return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' classes attended ('+day.pct+'%)</h3>'
+    + '<div class="cal-detail-list">' + day.recs.map(r=>{
+        const su = DB.subjects.find(x=>x.id===r.subjectId);
+        return '<div class="cal-detail-row"><span>Period '+r.period+' · '+(su?su.name:'—')+'</span>'
+          + '<span class="badge badge-'+(r.status==='P'?'success':'danger')+'">'+(r.status==='P'?'Present':'Absent')+'</span></div>';
+      }).join('') + '</div>';
+}
+
 /* ============================= TEACHER DASHBOARD ============================= */
 function renderTeacherSidebar(){
   const teacher = DB.teachers.find(t=>t.id===state.teacherId);
-  const tabs = [['dashboard','Dashboard'],['mark','Mark attendance'],['records','Attendance records'],['reports','Reports']];
+  const tabs = [['dashboard','Dashboard'],['mark','Mark attendance'],['calendar','Calendar'],['records','Attendance records'],['reports','Reports']];
   $('#teacher-sidebar').innerHTML = '<div class="side-title">'+teacher.name+'</div><div class="side-sub">'+teacher.teacherId+'</div>'
     + tabs.map(t=>'<button class="sidebar-link '+(state.teacherTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#teacher-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
@@ -544,6 +673,7 @@ function renderTeacherContent(){
   const teacher = DB.teachers.find(t=>t.id===state.teacherId);
   if(state.teacherTab==='dashboard') return renderTeacherDashboard(teacher);
   if(state.teacherTab==='mark') return renderTeacherMark(teacher);
+  if(state.teacherTab==='calendar') return renderTeacherCalendar(teacher);
   if(state.teacherTab==='records') return renderTeacherRecords(teacher);
   if(state.teacherTab==='reports') return renderTeacherReports(teacher);
 }
@@ -640,6 +770,59 @@ function renderTeacherMark(teacher){
       });
       $('#save-confirm').textContent = 'Saved '+Object.keys(state.markDraft).length+' records for '+date+'.';
     });
+  }
+}
+
+function teacherDayStats(teacher, subjectFilter, dateStr){
+  let recs = DB.attendance.filter(a=>a.teacherId===teacher.id && a.date===dateStr);
+  if(subjectFilter!=='all') recs = recs.filter(a=>a.subjectId===subjectFilter);
+  if(!recs.length) return null;
+  const present = recs.filter(r=>r.status==='P').length;
+  return {held:recs.length, present, absent:recs.length-present, pct:Math.round((present/recs.length)*1000)/10, recs};
+}
+
+function renderTeacherCalendar(teacher){
+  const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
+  if(!state.teacherCalMonth) state.teacherCalMonth = monthsData[monthsData.length-1].prefix;
+  const m = state.teacherCalMonth;
+
+  let html = '<div class="page-head"><div><h1>Calendar</h1><div class="sub">Day-by-day attendance across your classes.</div></div></div>';
+
+  if(!subjects.length){
+    html += '<div class="card"><p class="empty">No subjects are assigned to you yet.</p></div>';
+    $('#teacher-content').innerHTML = html;
+    return;
+  }
+
+  html += '<div class="card"><div class="cal-toolbar">'
+    + '<div class="field" style="margin:0;min-width:180px;"><label>Month</label><select id="tcal-month">' + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field" style="margin:0;min-width:200px;"><label>Subject</label><select id="tcal-subject"><option value="all">All subjects</option>' + subjects.map(su=>'<option value="'+su.id+'" '+(state.teacherCalSubject===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
+    + '</div>'
+    + calendarHtml(m, d=>teacherDayStats(teacher, state.teacherCalSubject, d), state.teacherCalDate)
+    + '</div>';
+
+  html += '<div class="card" id="tcal-detail">' + teacherCalDetailHtml(state.teacherCalDate) + '</div>';
+
+  $('#teacher-content').innerHTML = html;
+
+  $('#tcal-month').addEventListener('change', e=>{ state.teacherCalMonth=e.target.value; state.teacherCalDate=null; renderTeacherCalendar(teacher); });
+  $('#tcal-subject').addEventListener('change', e=>{ state.teacherCalSubject=e.target.value; state.teacherCalDate=null; renderTeacherCalendar(teacher); });
+  $all('[data-caldate]').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.teacherCalDate = btn.dataset.caldate;
+    renderTeacherCalendar(teacher);
+  }));
+
+  function teacherCalDetailHtml(dateStr){
+    if(!dateStr) return '<h3>Select a day</h3><p class="sub">Click any coloured day above to see that day\'s attendance by student.</p>';
+    const day = teacherDayStats(teacher, state.teacherCalSubject, dateStr);
+    if(!day) return '<h3>'+dateStr+'</h3><p class="sub">No classes were held on this day.</p>';
+    return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' present ('+day.pct+'%)</h3>'
+      + '<div class="cal-detail-list">' + day.recs.map(r=>{
+          const s = DB.students.find(x=>x.id===r.studentId);
+          const su = DB.subjects.find(x=>x.id===r.subjectId);
+          return '<div class="cal-detail-row"><span>'+(s?s.name:'—')+' · Period '+r.period+' · '+(su?su.name:'—')+'</span>'
+            + '<span class="badge badge-'+(r.status==='P'?'success':'danger')+'">'+(r.status==='P'?'Present':'Absent')+'</span></div>';
+        }).join('') + '</div>';
   }
 }
 
@@ -754,7 +937,7 @@ function renderTeacherReports(teacher){
 
 /* ============================= ADMIN DASHBOARD ============================= */
 function renderAdminSidebar(){
-  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['attendance','Attendance'],['analytics','Analytics']];
+  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['attendance','Attendance'],['calendar','Calendar'],['analytics','Analytics']];
   $('#admin-sidebar').innerHTML = '<div class="side-title">Administrator</div><div class="side-sub">Full access</div>'
     + tabs.map(t=>'<button class="sidebar-link '+(state.adminTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#admin-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
@@ -768,7 +951,8 @@ function renderAdminSidebar(){
 function renderAdminContent(){
   const map = {
     overview:renderAdminOverview, students:renderAdminStudents, teachers:renderAdminTeachers,
-    subjects:renderAdminSubjects, classes:renderAdminClasses, attendance:renderAdminAttendance, analytics:renderAdminAnalytics
+    subjects:renderAdminSubjects, classes:renderAdminClasses, attendance:renderAdminAttendance,
+    calendar:renderAdminCalendar, analytics:renderAdminAnalytics
   };
   map[state.adminTab]();
 }
@@ -1164,6 +1348,61 @@ function printAdminAttendance(){
         return '<tr style="border-bottom:1px solid #ccc;"><td style="padding:6px;">'+r.date+'</td><td style="padding:6px;">'+(s?s.regNo:'')+'</td><td style="padding:6px;">'+(s?s.name:'')+'</td><td style="padding:6px;">'+(su?su.name:'')+'</td><td style="padding:6px;text-align:center;">'+(r.status==='P'?'Present':'Absent')+'</td></tr>';
       }).join('') + '</tbody></table>';
   printReport(html);
+}
+
+/* --- Calendar --- */
+function adminDayStats(classFilter, dateStr){
+  let recs = DB.attendance.filter(a=>a.date===dateStr);
+  if(classFilter!=='all'){
+    const ids = new Set(DB.students.filter(s=>s.classId===classFilter).map(s=>s.id));
+    recs = recs.filter(a=>ids.has(a.studentId));
+  }
+  if(!recs.length) return null;
+  const present = recs.filter(r=>r.status==='P').length;
+  return {held:recs.length, present, absent:recs.length-present, pct:Math.round((present/recs.length)*1000)/10, recs};
+}
+
+function renderAdminCalendar(){
+  if(!state.adminCalMonth) state.adminCalMonth = monthsData[monthsData.length-1].prefix;
+  const m = state.adminCalMonth;
+
+  let html = '<div class="page-head"><div><h1>Calendar</h1><div class="sub">Day-by-day attendance across the institution.</div></div></div>';
+  html += '<div class="card"><div class="cal-toolbar">'
+    + '<div class="field" style="margin:0;min-width:180px;"><label>Month</label><select id="acal-month">' + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field" style="margin:0;min-width:200px;"><label>Class</label><select id="acal-class"><option value="all">All classes</option>' + DB.classes.map(c=>'<option value="'+c.id+'" '+(state.adminCalClass===c.id?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('') + '</select></div>'
+    + '</div>'
+    + calendarHtml(m, d=>adminDayStats(state.adminCalClass, d), state.adminCalDate)
+    + '</div>';
+
+  html += '<div class="card" id="acal-detail">' + adminCalDetailHtml(state.adminCalDate) + '</div>';
+
+  $('#admin-content').innerHTML = html;
+
+  $('#acal-month').addEventListener('change', e=>{ state.adminCalMonth=e.target.value; state.adminCalDate=null; renderAdminCalendar(); });
+  $('#acal-class').addEventListener('change', e=>{ state.adminCalClass=e.target.value; state.adminCalDate=null; renderAdminCalendar(); });
+  $all('[data-caldate]').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.adminCalDate = btn.dataset.caldate;
+    renderAdminCalendar();
+  }));
+
+  function adminCalDetailHtml(dateStr){
+    if(!dateStr) return '<h3>Select a day</h3><p class="sub">Click any coloured day above to see that day\'s attendance by class and subject.</p>';
+    const day = adminDayStats(state.adminCalClass, dateStr);
+    if(!day) return '<h3>'+dateStr+'</h3><p class="sub">No classes were held on this day.</p>';
+    const bySubject = {};
+    day.recs.forEach(r=>{
+      bySubject[r.subjectId] = bySubject[r.subjectId] || {held:0, present:0};
+      bySubject[r.subjectId].held++;
+      if(r.status==='P') bySubject[r.subjectId].present++;
+    });
+    return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' present ('+day.pct+'%)</h3>'
+      + '<div class="cal-detail-list">' + Object.keys(bySubject).map(suId=>{
+          const su = DB.subjects.find(x=>x.id===suId);
+          const st = bySubject[suId];
+          const pct = Math.round((st.present/st.held)*1000)/10;
+          return '<div class="cal-detail-row"><span>'+(su?su.name:'—')+'</span><span>'+st.present+' / '+st.held+' · '+pct+'%</span></div>';
+        }).join('') + '</div>';
+  }
 }
 
 /* --- Analytics --- */
