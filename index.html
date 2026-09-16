@@ -266,6 +266,27 @@
 /* ============================= DATA LAYER ============================= */
 const DB = { classes:[], teachers:[], subjects:[], students:[], attendance:[] };
 
+/* ============================= REMOTE SYNC (Google Sheets backend) =============================
+   1. Deploy the companion Apps Script (Code.gs) as a Web App (see setup notes provided with this file).
+   2. Paste the deployment URL below. Leave it as-is to run in local-only demo mode (no sharing). */
+const API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const BACKEND_ON = API_URL.indexOf('https://') === 0;
+
+function apiCall(body){
+  // text/plain avoids a CORS preflight against the Apps Script endpoint.
+  return fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body) })
+    .then(r=>r.json());
+}
+function apiGetAll(){ return fetch(API_URL + '?action=getAll').then(r=>r.json()); }
+function syncUpsert(table, row){ if(!BACKEND_ON) return; apiCall({action:'upsert', table, row}).catch(err=>console.error('[sync] upsert failed', table, err)); }
+function syncBulkUpsert(table, rows){ if(!BACKEND_ON || !rows || !rows.length) return; apiCall({action:'bulkUpsert', table, rows}).catch(err=>console.error('[sync] bulkUpsert failed', table, err)); }
+function syncDelete(table, id){ if(!BACKEND_ON) return; apiCall({action:'delete', table, id}).catch(err=>console.error('[sync] delete failed', table, err)); }
+function syncSeedAll(){
+  if(!BACKEND_ON) return Promise.resolve();
+  return apiCall({action:'seed', payload:{classes:DB.classes, teachers:DB.teachers, subjects:DB.subjects, students:DB.students, attendance:DB.attendance}})
+    .catch(err=>console.error('[sync] seed failed', err));
+}
+
 const monthsData = [
   {name:'June', prefix:'2026-06', dates:['2026-06-02','2026-06-03','2026-06-04','2026-06-05','2026-06-08','2026-06-09','2026-06-10','2026-06-11','2026-06-12','2026-06-15']},
   {name:'July', prefix:'2026-07', dates:['2026-07-01','2026-07-02','2026-07-03','2026-07-06','2026-07-07','2026-07-08','2026-07-09','2026-07-10','2026-07-13','2026-07-14']},
@@ -763,11 +784,13 @@ function renderTeacherMark(teacher){
     $('#save-attendance-btn').addEventListener('click', ()=>{
       const date = state.markDate || '2026-09-14';
       const period = state.markPeriod || 1;
+      const touched = [];
       Object.entries(state.markDraft).forEach(([studentId, status])=>{
         const existing = DB.attendance.find(a=>a.studentId===studentId && a.subjectId===state.markSubject && a.date===date && a.period===period);
-        if(existing) existing.status = status;
-        else DB.attendance.push({id:uid('A'), studentId, subjectId:state.markSubject, teacherId:teacher.id, date, period, status});
+        if(existing){ existing.status = status; touched.push(existing); }
+        else{ const rec = {id:uid('A'), studentId, subjectId:state.markSubject, teacherId:teacher.id, date, period, status}; DB.attendance.push(rec); touched.push(rec); }
       });
+      syncBulkUpsert('attendance', touched);
       $('#save-confirm').textContent = 'Saved '+Object.keys(state.markDraft).length+' records for '+date+'.';
     });
   }
@@ -869,6 +892,7 @@ function renderRecResults(teacher){
   $all('[data-flip]').forEach(btn=>btn.addEventListener('click', ()=>{
     const rec = DB.attendance.find(a=>a.id===btn.dataset.flip);
     rec.status = rec.status==='P' ? 'A' : 'P';
+    syncUpsert('attendance', rec);
     renderRecResults(teacher);
   }));
 }
@@ -1027,8 +1051,10 @@ function bindStudentFormEvents(){
       email:$('#f-email').value.trim(), phone:$('#f-phone').value.trim(), admissionYear:$('#f-admissionYear').value.trim(), status:$('#f-status').value
     };
     if(!data.name || !data.regNo){ alert('Register number and name are required.'); return; }
-    if(state.studentForm) Object.assign(state.studentForm, data);
-    else DB.students.push(Object.assign({id:uid('ST')}, data));
+    let savedRec;
+    if(state.studentForm){ Object.assign(state.studentForm, data); savedRec = state.studentForm; }
+    else{ savedRec = Object.assign({id:uid('ST')}, data); DB.students.push(savedRec); }
+    syncUpsert('students', savedRec);
     state.studentForm = null;
     renderAdminStudents();
   });
@@ -1058,6 +1084,7 @@ function renderStudentTable(){
   }));
   $all('[data-del]').forEach(b=>b.addEventListener('click', ()=>{
     if(confirm('Delete this student?')){
+      syncDelete('students', b.dataset.del);
       DB.students = DB.students.filter(s=>s.id!==b.dataset.del);
       renderStudentTable();
     }
@@ -1070,17 +1097,21 @@ function handleImportStudents(e){
   const reader = new FileReader();
   reader.onload = ()=>{
     const lines = reader.result.split(/\r?\n/).filter(l=>l.trim());
+    const imported = [];
     lines.slice(1).forEach(line=>{
       const cols = line.split(',');
       if(cols.length<2) return;
       const regNo=cols[0], name=cols[1], dob=cols[2], gender=cols[3], course=cols[4], dept=cols[5], semester=cols[6], section=cols[7], email=cols[8], phone=cols[9], admissionYear=cols[10], status=cols[11];
       const cls = DB.classes.find(c=>c.course===course && String(c.semester)===String(semester) && c.section===section) || DB.classes[0];
-      DB.students.push({
+      const rec = {
         id:uid('ST'), regNo:regNo||'', name:name||'Unnamed', dob:dob||'', gender:gender||'Other',
         course:cls.course, dept:dept||'Commerce', semester:cls.semester, section:cls.section,
         email:email||'', phone:phone||'', admissionYear:admissionYear||'', status:status||'Active', classId:cls.id
-      });
+      };
+      DB.students.push(rec);
+      imported.push(rec);
     });
+    syncBulkUpsert('students', imported);
     renderAdminStudents();
   };
   reader.readAsText(file);
@@ -1122,6 +1153,7 @@ function renderAdminTeachers(){
   $all('[data-edit-t]').forEach(b=>b.addEventListener('click', ()=>{ state.teacherForm = DB.teachers.find(t=>t.id===b.dataset.editT); renderAdminTeachers(); }));
   $all('[data-del-t]').forEach(b=>b.addEventListener('click', ()=>{
     if(confirm('Delete this teacher?')){
+      syncDelete('teachers', b.dataset.delT);
       DB.teachers = DB.teachers.filter(t=>t.id!==b.dataset.delT);
       renderAdminTeachers();
     }
@@ -1133,13 +1165,16 @@ function bindTeacherFormEvents(){
     const selected = Array.from($('#f-tsubjects').selectedOptions).map(o=>o.value);
     const data = {teacherId:$('#f-teacherId').value.trim(), name:$('#f-tname').value.trim(), password:$('#f-tpass').value, status:$('#f-tstatus').value};
     if(!data.name || !data.teacherId){ alert('Teacher ID and name are required.'); return; }
-    let teacherId;
-    if(state.teacherForm){ Object.assign(state.teacherForm, data); teacherId = state.teacherForm.id; }
-    else { const newT = Object.assign({id:uid('TC')}, data); DB.teachers.push(newT); teacherId = newT.id; }
+    let teacherId, savedTeacher;
+    if(state.teacherForm){ Object.assign(state.teacherForm, data); teacherId = state.teacherForm.id; savedTeacher = state.teacherForm; }
+    else { const newT = Object.assign({id:uid('TC')}, data); DB.teachers.push(newT); teacherId = newT.id; savedTeacher = newT; }
+    syncUpsert('teachers', savedTeacher);
+    const touchedSubjects = [];
     DB.subjects.forEach(su=>{
-      if(selected.includes(su.id)) su.teacherId = teacherId;
-      else if(su.teacherId===teacherId) su.teacherId = null;
+      if(selected.includes(su.id)){ if(su.teacherId!==teacherId){ su.teacherId = teacherId; touchedSubjects.push(su); } }
+      else if(su.teacherId===teacherId){ su.teacherId = null; touchedSubjects.push(su); }
     });
+    syncBulkUpsert('subjects', touchedSubjects);
     state.teacherForm = null;
     renderAdminTeachers();
   });
@@ -1179,6 +1214,7 @@ function renderAdminSubjects(){
   $all('[data-edit-s]').forEach(b=>b.addEventListener('click', ()=>{ state.subjectForm = DB.subjects.find(s=>s.id===b.dataset.editS); renderAdminSubjects(); }));
   $all('[data-del-s]').forEach(b=>b.addEventListener('click', ()=>{
     if(confirm('Delete this subject?')){
+      syncDelete('subjects', b.dataset.delS);
       DB.subjects = DB.subjects.filter(s=>s.id!==b.dataset.delS);
       renderAdminSubjects();
     }
@@ -1189,8 +1225,10 @@ function bindSubjectFormEvents(){
   $('#save-subject-btn').addEventListener('click', ()=>{
     const data = {code:$('#f-scode').value.trim(), name:$('#f-sname').value.trim(), semester:Number($('#f-ssem').value)||1, teacherId:$('#f-steacher').value, classId:$('#f-sclass').value};
     if(!data.code || !data.name){ alert('Subject code and name are required.'); return; }
-    if(state.subjectForm) Object.assign(state.subjectForm, data);
-    else DB.subjects.push(Object.assign({id:uid('SU')}, data));
+    let savedSubject;
+    if(state.subjectForm){ Object.assign(state.subjectForm, data); savedSubject = state.subjectForm; }
+    else{ savedSubject = Object.assign({id:uid('SU')}, data); DB.subjects.push(savedSubject); }
+    syncUpsert('subjects', savedSubject);
     state.subjectForm = null;
     renderAdminSubjects();
   });
@@ -1228,6 +1266,7 @@ function renderAdminClasses(){
   $all('[data-edit-c]').forEach(b=>b.addEventListener('click', ()=>{ state.classForm = DB.classes.find(c=>c.id===b.dataset.editC); renderAdminClasses(); }));
   $all('[data-del-c]').forEach(b=>b.addEventListener('click', ()=>{
     if(confirm('Delete this class? Students and subjects linked to it will remain but show as unassigned.')){
+      syncDelete('classes', b.dataset.delC);
       DB.classes = DB.classes.filter(c=>c.id!==b.dataset.delC);
       renderAdminClasses();
     }
@@ -1238,8 +1277,10 @@ function bindClassFormEvents(){
   $('#save-class-btn').addEventListener('click', ()=>{
     const data = {course:$('#f-ccourse').value.trim(), semester:Number($('#f-csem').value)||1, section:$('#f-csection').value.trim(), year:$('#f-cyear').value.trim()};
     if(!data.course || !data.section){ alert('Course and section are required.'); return; }
-    if(state.classForm) Object.assign(state.classForm, data);
-    else DB.classes.push(Object.assign({id:uid('CL')}, data));
+    let savedClass;
+    if(state.classForm){ Object.assign(state.classForm, data); savedClass = state.classForm; }
+    else{ savedClass = Object.assign({id:uid('CL')}, data); DB.classes.push(savedClass); }
+    syncUpsert('classes', savedClass);
     state.classForm = null;
     renderAdminClasses();
   });
@@ -1312,9 +1353,11 @@ function renderAdminAttResults(){
   $all('[data-aflip]').forEach(b=>b.addEventListener('click', ()=>{
     const rec = DB.attendance.find(a=>a.id===b.dataset.aflip);
     rec.status = rec.status==='P' ? 'A' : 'P';
+    syncUpsert('attendance', rec);
     renderAdminAttResults();
   }));
   $all('[data-adel]').forEach(b=>b.addEventListener('click', ()=>{
+    syncDelete('attendance', b.dataset.adel);
     DB.attendance = DB.attendance.filter(a=>a.id!==b.dataset.adel);
     renderAdminAttResults();
   }));
@@ -1428,12 +1471,43 @@ function renderAdminAnalytics(){
 }
 
 /* ============================= INIT ============================= */
-document.addEventListener('DOMContentLoaded', ()=>{
-  seedDB();
-  generateAttendance();
-  populateLoginSelects();
-  bindLoginEvents();
-});
+document.addEventListener('DOMContentLoaded', initApp);
+
+function initApp(){
+  if(!BACKEND_ON){
+    console.warn('No API_URL configured — running in local-only demo mode (data will not be shared between users/devices).');
+    seedDB();
+    generateAttendance();
+    populateLoginSelects();
+    bindLoginEvents();
+    return;
+  }
+  apiGetAll().then(res=>{
+    if(res && res.ok && res.data && res.data.students && res.data.students.length){
+      DB.classes = res.data.classes || [];
+      DB.teachers = res.data.teachers || [];
+      DB.subjects = res.data.subjects || [];
+      DB.students = res.data.students || [];
+      DB.attendance = res.data.attendance || [];
+      populateLoginSelects();
+      bindLoginEvents();
+    } else {
+      // Sheet is empty (first run) — seed demo data locally, then push it to the sheet once.
+      seedDB();
+      generateAttendance();
+      syncSeedAll().finally(()=>{
+        populateLoginSelects();
+        bindLoginEvents();
+      });
+    }
+  }).catch(err=>{
+    console.error('Could not reach the shared backend, falling back to local demo data.', err);
+    seedDB();
+    generateAttendance();
+    populateLoginSelects();
+    bindLoginEvents();
+  });
+}
 </script>
 </body>
 </html>
