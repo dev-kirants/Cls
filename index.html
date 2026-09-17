@@ -59,6 +59,7 @@
   .role-tab.active{color:var(--primary); border-color:var(--primary);}
   .login-panel .field:last-of-type{margin-bottom:18px;}
   .hint{font-size:0.78rem; color:var(--muted); margin-top:16px; text-align:center; line-height:1.5;}
+  .field-error{font-size:0.8rem; color:var(--danger); background:var(--danger-tint); border:1px solid var(--danger); border-radius:var(--radius); padding:8px 10px; margin:-4px 0 14px;}
 
   /* ---------- Shared form / field styles ---------- */
   .field{margin-bottom:16px;}
@@ -218,24 +219,27 @@
         </div>
 
         <div id="login-panel-student" class="login-panel">
-          <div class="field"><label for="student-select">Register number</label><select id="student-select"></select></div>
-          <div class="field"><label for="student-pass">Date of birth</label><input id="student-pass" type="password" value="demo"/></div>
+          <div class="field"><label for="student-reg">Register number</label><input id="student-reg" autocomplete="username" placeholder="e.g. 22CS045"/></div>
+          <div class="field"><label for="student-pass">Date of birth</label><input id="student-pass" type="password" autocomplete="current-password" placeholder="YYYY-MM-DD"/></div>
+          <div id="student-login-error" class="field-error" style="display:none"></div>
           <button class="btn btn-primary btn-block" data-login="student">Sign in as student</button>
         </div>
 
         <div id="login-panel-teacher" class="login-panel" style="display:none">
-          <div class="field"><label for="teacher-select">Teacher ID</label><select id="teacher-select"></select></div>
-          <div class="field"><label for="teacher-pass">Password</label><input id="teacher-pass" type="password" value="demo"/></div>
+          <div class="field"><label for="teacher-id-input">Teacher ID</label><input id="teacher-id-input" autocomplete="username" placeholder="e.g. TCH001"/></div>
+          <div class="field"><label for="teacher-pass">Password</label><input id="teacher-pass" type="password" autocomplete="current-password"/></div>
+          <div id="teacher-login-error" class="field-error" style="display:none"></div>
           <button class="btn btn-primary btn-block" data-login="teacher">Sign in as teacher</button>
         </div>
 
         <div id="login-panel-admin" class="login-panel" style="display:none">
-          <div class="field"><label>Admin username</label><input value="admin" disabled/></div>
-          <div class="field"><label>Password</label><input type="password" value="demo"/></div>
+          <div class="field"><label for="admin-user">Admin username</label><input id="admin-user" autocomplete="username"/></div>
+          <div class="field"><label for="admin-pass">Password</label><input id="admin-pass" type="password" autocomplete="current-password"/></div>
+          <div id="admin-login-error" class="field-error" style="display:none"></div>
           <button class="btn btn-primary btn-block" data-login="admin">Sign in as admin</button>
         </div>
 
-        <p class="hint">Demo system — pick any record and sign in. No real credentials are checked.</p>
+        <p class="hint">Student sign-in uses your register number and date of birth. Teacher and admin credentials are issued by the administrator.</p>
       </div>
     </div>
   </div>
@@ -265,6 +269,10 @@
 <script>
 /* ============================= DATA LAYER ============================= */
 const DB = { classes:[], teachers:[], subjects:[], students:[], attendance:[] };
+
+/* Admin credentials are kept only here in code — never pre-filled or displayed
+   in any input, select, table or export in the UI. Change these before deploying. */
+const ADMIN_CREDENTIALS = { username:'admin', password:'admin@123' };
 
 /* ============================= REMOTE SYNC (Google Sheets backend) =============================
    1. Deploy the companion Apps Script (Code.gs) as a Web App (see setup notes provided with this file).
@@ -530,8 +538,19 @@ const state = {
 
 /* ============================= LOGIN / NAV ============================= */
 function populateLoginSelects(){
-  $('#student-select').innerHTML = DB.students.map(s=>'<option value="'+s.id+'">'+s.name+' — '+s.regNo+'</option>').join('');
-  $('#teacher-select').innerHTML = DB.teachers.map(t=>'<option value="'+t.id+'">'+t.name+' — '+t.teacherId+'</option>').join('');
+  // No-op: sign-in is by typed register number / teacher ID, so the full
+  // roster is never listed or exposed on the login page.
+}
+
+function showLoginError(role, msg){
+  const el = $('#'+role+'-login-error');
+  if(!el) return;
+  if(!msg){ el.style.display='none'; el.textContent=''; }
+  else { el.style.display='block'; el.textContent=msg; }
+}
+
+function clearLoginErrors(){
+  ['student','teacher','admin'].forEach(r=>showLoginError(r, ''));
 }
 
 function bindLoginEvents(){
@@ -540,16 +559,48 @@ function bindLoginEvents(){
     tab.classList.add('active');
     $all('.login-panel').forEach(p=>p.style.display='none');
     $('#login-panel-'+tab.dataset.role).style.display='block';
+    clearLoginErrors();
   }));
   $all('[data-login]').forEach(btn=>btn.addEventListener('click', ()=>login(btn.dataset.login)));
   $('#logout-btn').addEventListener('click', logout);
 }
 
 function login(role){
-  state.role = role;
-  if(role==='student') state.studentId = $('#student-select').value;
-  if(role==='teacher'){ state.teacherId = $('#teacher-select').value; state.teacherTab='dashboard'; }
-  if(role==='admin') state.adminTab='overview';
+  showLoginError(role, '');
+
+  if(role==='student'){
+    const reg = $('#student-reg').value.trim();
+    const dob = $('#student-pass').value.trim();
+    if(!reg || !dob){ showLoginError('student', 'Enter your register number and date of birth.'); return; }
+    const student = DB.students.find(s=>s.regNo.toLowerCase()===reg.toLowerCase());
+    if(!student || student.dob !== dob){ showLoginError('student', 'Register number or date of birth is incorrect.'); return; }
+    state.role = 'student';
+    state.studentId = student.id;
+    $('#student-reg').value=''; $('#student-pass').value='';
+  }
+  else if(role==='teacher'){
+    const tid = $('#teacher-id-input').value.trim();
+    const pass = $('#teacher-pass').value;
+    if(!tid || !pass){ showLoginError('teacher', 'Enter your teacher ID and password.'); return; }
+    const teacher = DB.teachers.find(t=>t.teacherId.toLowerCase()===tid.toLowerCase());
+    if(!teacher || teacher.password !== pass){ showLoginError('teacher', 'Teacher ID or password is incorrect.'); return; }
+    state.role = 'teacher';
+    state.teacherId = teacher.id;
+    state.teacherTab = 'dashboard';
+    $('#teacher-id-input').value=''; $('#teacher-pass').value='';
+  }
+  else if(role==='admin'){
+    const user = $('#admin-user').value.trim();
+    const pass = $('#admin-pass').value;
+    if(user !== ADMIN_CREDENTIALS.username || pass !== ADMIN_CREDENTIALS.password){
+      showLoginError('admin', 'Username or password is incorrect.');
+      return;
+    }
+    state.role = 'admin';
+    state.adminTab = 'overview';
+    $('#admin-user').value=''; $('#admin-pass').value='';
+  }
+
   enterApp();
 }
 
@@ -558,6 +609,7 @@ function logout(){
   $('#topbar').style.display='none';
   $all('.view').forEach(v=>v.classList.remove('active'));
   $('#view-login').classList.add('active');
+  clearLoginErrors();
 }
 
 function updateTopbarWho(){
@@ -1126,7 +1178,7 @@ function teacherFormHtml(){
     + '<div class="form-grid">'
     + '<div class="field"><label>Teacher ID</label><input id="f-teacherId" value="'+t.teacherId+'"/></div>'
     + '<div class="field"><label>Name</label><input id="f-tname" value="'+t.name+'"/></div>'
-    + '<div class="field"><label>Password</label><input id="f-tpass" value="'+t.password+'"/></div>'
+    + '<div class="field"><label>Password</label><input id="f-tpass" type="password" autocomplete="new-password" value="'+t.password+'"/></div>'
     + '<div class="field"><label>Status</label><select id="f-tstatus">' + ['Active','Inactive'].map(g=>'<option '+(g===t.status?'selected':'')+'>'+g+'</option>').join('') + '</select></div>'
     + '</div>'
     + '<div class="field"><label>Assigned subjects</label><select id="f-tsubjects" multiple size="4">'
