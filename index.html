@@ -6,6 +6,7 @@
 <title>Attendance Ledger — Student Attendance Management System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root{
     --ink:#211316;
@@ -178,13 +179,68 @@
   .cal-detail-list{display:flex; flex-direction:column; gap:8px;}
   .cal-detail-row{display:flex; justify-content:space-between; align-items:center; padding:8px 12px; background:var(--paper); border-radius:var(--radius); font-size:0.85rem;}
 
+  /* ---------- Today's classes (big buttons) ---------- */
+  .today-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px;}
+  .class-btn{display:flex; flex-direction:column; align-items:flex-start; gap:6px; text-align:left; padding:22px 20px; border-radius:10px; border:1px solid var(--line); background:var(--surface); cursor:pointer; min-height:120px; transition:transform .12s ease, box-shadow .12s ease, border-color .12s ease;}
+  .class-btn:hover{border-color:var(--primary); box-shadow:0 4px 14px rgba(0,0,0,0.08); transform:translateY(-2px);}
+  .class-btn .cb-time{font-size:0.76rem; font-weight:700; color:var(--gold); letter-spacing:0.03em; text-transform:uppercase;}
+  .class-btn .cb-subject{font-family:var(--font-serif); font-size:1.25rem; font-weight:600; color:var(--ink); line-height:1.2;}
+  .class-btn .cb-meta{font-size:0.82rem; color:var(--muted);}
+  .class-btn.cb-done{background:var(--success-tint); border-color:var(--success);}
+  .class-btn.cb-done .cb-time{color:var(--success);}
+
+  /* ---------- Timetable grid ---------- */
+  .tt-table{width:100%; border-collapse:collapse; font-size:0.84rem;}
+  .tt-table th{background:var(--paper); padding:8px; border:1px solid var(--line); font-size:0.74rem; color:var(--muted);}
+  .tt-table td{border:1px solid var(--line); padding:4px; vertical-align:top; min-width:120px;}
+  .tt-table td select{font-size:0.78rem; padding:6px 8px;}
+  .tt-cell-view{padding:10px 8px; min-height:44px; display:flex; flex-direction:column; gap:2px;}
+  .tt-cell-view .tt-sub{font-weight:600; font-size:0.85rem;}
+  .tt-cell-view .tt-teach{font-size:0.74rem; color:var(--muted);}
+  .tt-period-label{font-weight:600; font-size:0.78rem;}
+  .tt-period-time{font-size:0.7rem; color:var(--muted); font-weight:400;}
+  .tt-empty-cell{color:var(--muted); font-size:0.78rem; text-align:center; padding:14px 4px;}
+
+  /* ---------- Holidays ---------- */
+  .holiday-row{display:flex; justify-content:space-between; align-items:center; padding:12px 14px; border:1px solid var(--line); border-radius:var(--radius); margin-bottom:8px;}
+  .holiday-date{font-family:var(--font-serif); font-weight:600; min-width:110px;}
+  .holiday-name{flex:1; padding:0 14px;}
+
+  /* ---------- Class notes / content ---------- */
+  .session-card{border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:12px; background:var(--surface);}
+  .session-card .sc-head{display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:6px;}
+  .session-card .sc-title{font-weight:600;}
+  .session-card .sc-date{font-size:0.78rem; color:var(--muted);}
+  .session-card .sc-topics{margin:8px 0; line-height:1.55; white-space:pre-wrap;}
+  .file-chip-list{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;}
+  .file-chip{display:inline-flex; align-items:center; gap:6px; background:var(--paper); border:1px solid var(--line); border-radius:100px; padding:5px 12px 5px 10px; font-size:0.78rem; text-decoration:none; color:var(--ink);}
+  .file-chip:hover{border-color:var(--primary);}
+  textarea{width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:var(--radius); font-size:0.92rem; font-family:var(--font-sans); resize:vertical; min-height:90px; background:var(--surface); color:var(--ink);}
+
+  /* ---------- Settings ---------- */
+  .status-pill{display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:100px; font-size:0.8rem; font-weight:600;}
+  .status-connected{background:var(--success-tint); color:var(--success);}
+  .status-disconnected{background:var(--danger-tint); color:var(--danger);}
+  .sql-box{background:var(--ink); color:#e8e2d6; padding:16px; border-radius:var(--radius); font-family:monospace; font-size:0.76rem; white-space:pre; overflow-x:auto; max-height:320px; overflow-y:auto;}
+
   /* ---------- Print ---------- */
   #print-area{position:absolute; left:-9999px; top:0; width:800px; background:#fff; color:#000; padding:24px; font-family:var(--font-sans);}
   @media print{
     body > *:not(#print-area){display:none !important;}
     #print-area{position:static; left:auto; width:auto;}
   }
+
+  :root{--radius:12px;}
+  .card,.stat-card{box-shadow:0 6px 24px rgba(90,20,31,.07);}
+  .login-hero{background:linear-gradient(150deg,#5A141F,#7A1E2C 55%,#B9862E); color:#fff;} .login-hero h1,.login-hero p,.login-hero .eyebrow{color:#fff;}
+  .brand-logo{height:56px; max-width:200px; object-fit:contain; background:#fff; border-radius:10px; padding:4px; margin-right:10px; vertical-align:middle;} .topbar .brand-logo{height:34px;}
+  .brand-name{font-family:var(--font-serif); font-size:1.7rem; margin:10px 0 2px; color:#fff;} .brand-tag{color:#F3D9A4; font-weight:600;} .brand-details{color:#fff; opacity:.9; font-size:.9rem;}
+  .day-chips{display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 16px;} .day-chip{border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 18px; font-weight:600; cursor:pointer;} .day-chip.on{background:var(--primary); color:#fff; border-color:var(--primary);}
+  .today-grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr)) !important;} .class-btn{min-height:150px; box-shadow:0 4px 14px rgba(0,0,0,.06);} .class-btn .cb-subject{font-size:1.45rem;}
+  .pc-row{display:inline-flex; align-items:center; gap:6px; margin:4px 14px 4px 0;} .hm-table{width:100%; border-collapse:separate; border-spacing:4px; text-align:center;} .hm{border-radius:6px; padding:9px 4px; font-size:.8rem; font-weight:600;}
+  .risk-row{display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line);}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -222,7 +278,7 @@
 
         <div id="login-panel-student" class="login-panel">
           <div class="field"><label for="student-reg">Register number</label><input id="student-reg" autocomplete="username" placeholder="e.g. 22CS045"/></div>
-          <div class="field"><label for="student-pass">Date of birth</label><input id="student-pass" type="password" autocomplete="current-password" placeholder="YYYY-MM-DD"/></div>
+          <div class="field"><label for="student-pass">Phone number</label><input id="student-pass" type="password" autocomplete="current-password" placeholder="Registered mobile number"/></div>
           <div id="student-login-error" class="field-error" style="display:none"></div>
           <button class="btn btn-primary btn-block" data-login="student">Sign in as student</button>
         </div>
@@ -270,31 +326,120 @@
 
 <script>
 /* ============================= DATA LAYER ============================= */
-const DB = { classes:[], teachers:[], subjects:[], students:[], attendance:[] };
+const DB = { classes:[], teachers:[], subjects:[], students:[], attendance:[], timetable:[], holidays:[], sessions:[], settings:[] };
+const SYNC_TABLES = ['classes','teachers','subjects','students','attendance','timetable','holidays','sessions','settings'];
 
-/* Admin credentials are kept only here in code — never pre-filled or displayed
-   in any input, select, table or export in the UI. Change these before deploying. */
 const ADMIN_CREDENTIALS = { username:'Admin', password:'admin@123' };
 
-/* ============================= REMOTE SYNC (Google Sheets backend) =============================
-   1. Deploy the companion Apps Script (Code.gs) as a Web App (see setup notes provided with this file).
-   2. Paste the deployment URL below. Leave it as-is to run in local-only demo mode (no sharing). */
-const API_URL = 'https://script.google.com/macros/s/AKfycbynNBRCUUV8v2WFbR2ewFylIduYqTgaie9buAjbK9pMw9wP5NB1TfuJlbL7yeQTHNeC/exec';
-const BACKEND_ON = API_URL.indexOf('https://') === 0;
+/* ============================= FIREBASE (FIRESTORE) BACKEND ============================= */
+/* Data lives in Firebase Firestore (one collection per table, one document per record).
+   Configure it from Admin > Settings (stored in this browser), OR paste your Project ID and
+   Web API key into DEFAULT_BACKEND below so every teacher's device connects automatically.
+   In this app's settings: "url" = Firebase Project ID, "key" = Firebase Web API key. */
+const DEFAULT_BACKEND = { url:'', key:'' };
+const LS_SUPABASE_KEY = 'attlaw_supabase_cfg_v1';
 
-function apiCall(body){
-  // text/plain avoids a CORS preflight against the Apps Script endpoint.
-  return fetch(API_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body) })
-    .then(r=>r.json());
+function getSupabaseCfg(){
+  try{
+    const raw = localStorage.getItem(LS_SUPABASE_KEY);
+    const cfg = raw ? JSON.parse(raw) : {};
+    return {url:(cfg.url||DEFAULT_BACKEND.url||'').trim(), key:(cfg.key||DEFAULT_BACKEND.key||'').trim()};
+  }catch(e){ return {url:(DEFAULT_BACKEND.url||'').trim(), key:(DEFAULT_BACKEND.key||'').trim()}; }
 }
-function apiGetAll(){ return fetch(API_URL + '?action=getAll').then(r=>r.json()); }
-function syncUpsert(table, row){ if(!BACKEND_ON) return; apiCall({action:'upsert', table, row}).catch(err=>console.error('[sync] upsert failed', table, err)); }
-function syncBulkUpsert(table, rows){ if(!BACKEND_ON || !rows || !rows.length) return; apiCall({action:'bulkUpsert', table, rows}).catch(err=>console.error('[sync] bulkUpsert failed', table, err)); }
-function syncDelete(table, id){ if(!BACKEND_ON) return; apiCall({action:'delete', table, id}).catch(err=>console.error('[sync] delete failed', table, err)); }
-function syncSeedAll(){
-  if(!BACKEND_ON) return Promise.resolve();
-  return apiCall({action:'seed', payload:{classes:DB.classes, teachers:DB.teachers, subjects:DB.subjects, students:DB.students, attendance:DB.attendance}})
-    .catch(err=>console.error('[sync] seed failed', err));
+function setSupabaseCfg(url, key){ localStorage.setItem(LS_SUPABASE_KEY, JSON.stringify({url, key})); }
+function clearSupabaseCfg(){ localStorage.removeItem(LS_SUPABASE_KEY); }
+function BACKEND_ON(){ const c = getSupabaseCfg(); return !!(c.url && c.key); }
+
+function fsRoot(c){ return 'projects/'+c.url+'/databases/(default)/documents'; }
+async function fsPost(c, suffix, body){
+  const r = await fetch('https://firestore.googleapis.com/v1/'+fsRoot(c)+suffix+'?key='+encodeURIComponent(c.key), {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  if(!r.ok) throw new Error('HTTP '+r.status);
+  return r.json();
+}
+function fsEnc(v){
+  if(v === null || v === undefined) return {nullValue:null};
+  if(typeof v === 'number') return Number.isInteger(v) ? {integerValue:String(v)} : {doubleValue:v};
+  if(typeof v === 'boolean') return {booleanValue:v};
+  if(typeof v === 'object') return {stringValue:JSON.stringify(v)};
+  return {stringValue:String(v)};
+}
+function fsDec(key, v){
+  if('stringValue' in v){
+    if(key === 'files'){ try{ return JSON.parse(v.stringValue); }catch(e){ return []; } }
+    return v.stringValue;
+  }
+  if('integerValue' in v) return Number(v.integerValue);
+  if('doubleValue' in v) return v.doubleValue;
+  if('booleanValue' in v) return v.booleanValue;
+  return null;
+}
+// Attached class-note files are too big for a Firestore document (1 MB limit), so only name/size are shared.
+function prepRow(table, row){
+  if(table === 'sessions' && row && Array.isArray(row.files)){
+    return Object.assign({}, row, {files: row.files.map(f=>({name:f.name, size:f.size}))});
+  }
+  return row;
+}
+function fsWrite(c, table, row){
+  const fields = {};
+  const r = prepRow(table, row);
+  Object.keys(r).forEach(k=>{ if(r[k] !== undefined) fields[k] = fsEnc(r[k]); });
+  return {update:{name: fsRoot(c)+'/'+table+'/'+r.id, fields}};
+}
+async function apiGetAll(){
+  if(!BACKEND_ON()) return {ok:false};
+  const c = getSupabaseCfg();
+  try{
+    const results = await Promise.all(SYNC_TABLES.map(t=>
+      fsPost(c, ':runQuery', {structuredQuery:{from:[{collectionId:t}]}}).then(items=>
+        items.filter(i=>i.document).map(i=>{
+          const o = {};
+          const f = i.document.fields || {};
+          Object.keys(f).forEach(k=>{ o[k] = fsDec(k, f[k]); });
+          if(o.id === undefined) o.id = i.document.name.split('/').pop();
+          return o;
+        })
+      )
+    ));
+    const data = {};
+    SYNC_TABLES.forEach((t,i)=> data[t] = results[i]);
+    return {ok:true, data};
+  }catch(err){ console.error('[sync] load failed', err); return {ok:false, error:err.message}; }
+}
+function syncUpsert(table, row){
+  if(!BACKEND_ON() || !row) return Promise.resolve();
+  const c = getSupabaseCfg();
+  return fsPost(c, ':commit', {writes:[fsWrite(c, table, row)]})
+    .catch(err=>console.error('[sync] upsert failed', table, err));
+}
+async function syncBulkUpsert(table, rows){
+  if(!BACKEND_ON() || !rows || !rows.length) return;
+  const c = getSupabaseCfg();
+  try{
+    for(let i=0; i<rows.length; i+=400){
+      await fsPost(c, ':commit', {writes: rows.slice(i,i+400).map(r=>fsWrite(c, table, r))});
+    }
+  }catch(err){ console.error('[sync] bulkUpsert failed', table, err); }
+}
+function syncDelete(table, id){
+  if(!BACKEND_ON()) return Promise.resolve();
+  const c = getSupabaseCfg();
+  return fsPost(c, ':commit', {writes:[{delete: fsRoot(c)+'/'+table+'/'+id}]})
+    .catch(err=>console.error('[sync] delete failed', table, err));
+}
+async function syncSeedAll(){
+  if(!BACKEND_ON()) return;
+  for(const t of SYNC_TABLES){ await syncBulkUpsert(t, DB[t]); }
+}
+async function testSupabaseConnection(url, key){
+  try{
+    await fsPost({url, key}, ':runQuery', {structuredQuery:{from:[{collectionId:'classes'}], limit:1}});
+    return {ok:true};
+  }catch(err){
+    return {ok:false, msg:err.message+' — check the Project ID and Web API key, that you created a Firestore database (Build > Firestore Database), and that the rules from the box below are published.'};
+  }
 }
 
 const monthsData = [
@@ -303,6 +448,16 @@ const monthsData = [
   {name:'August', prefix:'2026-08', dates:['2026-08-03','2026-08-04','2026-08-05','2026-08-06','2026-08-07','2026-08-10','2026-08-11','2026-08-12','2026-08-13','2026-08-14']},
   {name:'September', prefix:'2026-09', dates:['2026-09-01','2026-09-02','2026-09-03','2026-09-04','2026-09-07','2026-09-08']}
 ];
+
+const WEEKDAYS = ['Mon','Tue','Wed','Thu','Fri','Sat'];
+const JS_DAY_TO_NAME = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const PERIODS = [1,2,3,4,5,6];
+const PERIOD_TIMES = {
+  1:'09:00 – 09:50', 2:'09:50 – 10:40', 3:'11:00 – 11:50',
+  4:'11:50 – 12:40', 5:'13:30 – 14:20', 6:'14:20 – 15:10'
+};
+function todayStr(){ return new Date().toLocaleDateString('en-CA'); }
+function todayDayName(){ return JS_DAY_TO_NAME[new Date().getDay()]; }
 
 const subjectMonthRates = {
   SU1:{June:0.84, July:0.87, August:0.90, September:0.93},
@@ -356,6 +511,35 @@ function seedDB(){
     mkStudent('ST10','24MCOM201','Jyoti Singh','2004-06-09','Female','CL3')
   ];
   DB.attendance = [];
+
+  // Default weekly timetable — a simple, editable starting point per class.
+  DB.timetable = [];
+  const ttPlan = {
+    CL1:['SU5','SU5','','SU5','','SU5'],
+    CL2:['SU1','SU2','SU3','SU4','SU1','SU2'],
+    CL3:['SU6','','SU6','','SU6','']
+  };
+  DB.classes.forEach(cls=>{
+    const rowSubjects = [ttPlan[cls.id]||[], ttPlan[cls.id]||[]];
+    WEEKDAYS.forEach((day, di)=>{
+      PERIODS.forEach((period, pi)=>{
+        const list = ttPlan[cls.id] || [];
+        const subjectId = list[(di+pi) % Math.max(list.length,1)] || '';
+        if(subjectId){
+          DB.timetable.push({id:'TT_'+cls.id+'_'+day+'_'+period, classId:cls.id, day, period, subjectId});
+        }
+      });
+    });
+  });
+
+  DB.holidays = [
+    {id:'HOL1', date:'2026-08-15', name:'Independence Day', type:'Holiday'},
+    {id:'HOL2', date:'2026-08-27', name:'Ganesh Chaturthi', type:'Holiday'},
+    {id:'HOL3', date:'2026-10-02', name:'Gandhi Jayanti', type:'Holiday'},
+    {id:'HOL4', date:'2026-09-05', name:'Teachers\' Day', type:'Event'}
+  ];
+
+  DB.sessions = [];
 }
 
 function generateAttendance(){
@@ -523,11 +707,107 @@ function printReport(html){
   window.print();
 }
 
+/* ============================= CLASS NOTES / CONTENT ============================= */
+function sessionKey(subjectId, date, period){ return 'SESS_'+subjectId+'_'+date+'_'+period; }
+function getSession(subjectId, date, period){ return DB.sessions.find(s=>s.id===sessionKey(subjectId,date,period)); }
+
+function saveSession(subjectId, classId, teacherId, date, period, topics, files){
+  const id = sessionKey(subjectId, date, period);
+  let rec = DB.sessions.find(s=>s.id===id);
+  if(rec){ rec.topics=topics; rec.files=files; rec.teacherId=teacherId; rec.classId=classId; }
+  else{ rec = {id, subjectId, classId, teacherId, date, period, topics, files}; DB.sessions.push(rec); }
+  syncUpsert('sessions', rec);
+  return rec;
+}
+
+const MAX_FILE_BYTES = 6 * 1024 * 1024; // 6MB per file, kept modest so sync stays fast
+function readFilesAsDataUrls(fileList){
+  const files = Array.from(fileList || []);
+  const oversized = files.filter(f=>f.size > MAX_FILE_BYTES);
+  const accepted = files.filter(f=>f.size <= MAX_FILE_BYTES);
+  const readers = accepted.map(f=> new Promise(res=>{
+    const r = new FileReader();
+    r.onload = ()=> res({name:f.name, size:f.size, dataUrl:r.result});
+    r.onerror = ()=> res(null);
+    r.readAsDataURL(f);
+  }));
+  return Promise.all(readers).then(results=>({
+    files: results.filter(Boolean),
+    oversized: oversized.map(f=>f.name)
+  }));
+}
+
+function fileChipListHtml(files){
+  if(!files || !files.length) return '';
+  return '<div class="file-chip-list">' + files.map((f,i)=>
+    (f.dataUrl ? '<a class="file-chip" href="'+f.dataUrl+'" download="'+(f.name||'file')+'">📎 '+(f.name||'file')+'</a>' : '<span class="file-chip" title="File was attached on another device">📎 '+(f.name||'file')+' (not shared)</span>')
+  ).join('') + '</div>';
+}
+
+/* ============================= TIMETABLE HELPERS ============================= */
+function timetableEntry(classId, day, period){ return DB.timetable.find(t=>t.classId===classId && t.day===day && t.period===period); }
+
+function teacherTodayClasses(teacher){
+  const day = todayDayName();
+  if(WEEKDAYS.indexOf(day)===-1) return []; // Sunday — no classes
+  const subjectIds = new Set(DB.subjects.filter(su=>su.teacherId===teacher.id).map(s=>s.id));
+  return DB.timetable
+    .filter(tt=> tt.day===day && subjectIds.has(tt.subjectId))
+    .sort((a,b)=>a.period-b.period);
+}
+
+/* ---- settings, periods, branding ---- */
+function getSetting(id, def){ const r = DB.settings.find(s=>s.id===id); if(!r) return def; try{ return JSON.parse(r.value); }catch(e){ return def; } }
+function setSetting(id, val){ let r = DB.settings.find(s=>s.id===id); if(!r){ r = {id, value:''}; DB.settings.push(r); } r.value = JSON.stringify(val); syncUpsert('settings', r); }
+function applyPeriodConfig(){
+  const list = getSetting('periods', null); if(!list || !list.length) return;
+  PERIODS.length = 0; Object.keys(PERIOD_TIMES).forEach(k=>delete PERIOD_TIMES[k]);
+  list.forEach((p,i)=>{ PERIODS.push(i+1); PERIOD_TIMES[i+1] = p.s+' – '+p.e; });
+}
+function applyBrand(){
+  const b = getSetting('brand', {}), nm = escapeHtml(b.name || 'Attendance Ledger');
+  const logo = b.logo ? '<img src="'+b.logo+'" class="brand-logo" alt="">' : '';
+  $('#topbar .brand').innerHTML = logo+'<span>'+nm+'</span>';
+  const hero = $('.login-hero'); if(!hero) return;
+  let bx = $('#brand-box'); if(!bx){ bx = document.createElement('div'); bx.id = 'brand-box'; hero.insertBefore(bx, hero.firstChild); }
+  bx.innerHTML = (b.name||b.logo||b.tagline||b.details) ? logo+(b.name?'<h2 class="brand-name">'+nm+'</h2>':'')+(b.tagline?'<div class="brand-tag">'+escapeHtml(b.tagline)+'</div>':'')+(b.details?'<p class="brand-details">'+escapeHtml(b.details).replace(/\n/g,'<br>')+'</p>':'') : '';
+}
+function readLogo(file, cb){ const r = new FileReader(); r.onload = ()=>{ const im = new Image(); im.onload = ()=>{ const s = Math.min(1, 240/Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width*s); c.height = Math.round(im.height*s); c.getContext('2d').drawImage(im,0,0,c.width,c.height); cb(c.toDataURL('image/png')); }; im.src = r.result; }; r.readAsDataURL(file); }
+function dateForDay(day){ const d = new Date(); d.setDate(d.getDate() - (d.getDay()+6)%7 + WEEKDAYS.indexOf(day)); return d.toLocaleDateString('en-CA'); }
+function teacherClassesOn(teacher, day){
+  const ids = new Set(DB.subjects.filter(su=>su.teacherId===teacher.id).map(s=>s.id));
+  return DB.timetable.filter(tt=>tt.day===day && ids.has(tt.subjectId)).sort((a,b)=>a.period-b.period);
+}
+function teacherName(su){ const t = DB.teachers.find(x=>x.id===su.teacherId); return t ? t.name : 'no faculty'; }
+function fmtMin(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+function periodRowsHtml(list){ return list.map((p,i)=>'<div class="pc-row"><b>P'+(i+1)+'</b><input type="time" class="pc-s" value="'+p[0]+'"/><span>to</span><input type="time" class="pc-e" value="'+p[1]+'"/></div>').join(''); }
+function periodEditorHtml(){
+  const cur = PERIODS.map(p=>PERIOD_TIMES[p].split(' – '));
+  const f = (id,l,v,t)=>'<div class="field"><label>'+l+'</label><input id="'+id+'" type="'+(t||'number')+'" value="'+v+'" min="0"/></div>';
+  return '<div class="card"><h3>Period schedule</h3><div class="form-row">'+f('pc-n','Periods per day',PERIODS.length)+f('pc-start','First period starts','09:00','time')+f('pc-dur','Minutes per period',50)
+    +f('pc-b1','Short break after period',2)+f('pc-b1m','Break minutes',10)+f('pc-b2','Lunch after period',4)+f('pc-b2m','Lunch minutes',45)+'</div>'
+    +'<div class="btn-row"><button class="btn btn-ghost btn-sm" id="pc-gen">Auto-fill times</button></div><div id="pc-rows">'+periodRowsHtml(cur)+'</div>'
+    +'<div class="btn-row"><button class="btn btn-primary btn-sm" id="pc-save">Save periods</button></div></div>';
+}
+function bindPeriodEditor(){
+  const v = id=>Number($('#'+id).value)||0;
+  $('#pc-gen').addEventListener('click', ()=>{
+    const [h,m] = ($('#pc-start').value||'09:00').split(':').map(Number); let t = h*60+m; const list = [];
+    for(let i=1;i<=Math.max(1,Math.min(12,v('pc-n')));i++){ list.push([fmtMin(t), fmtMin(t+v('pc-dur'))]); t += v('pc-dur'); if(i===v('pc-b1')) t += v('pc-b1m'); if(i===v('pc-b2')) t += v('pc-b2m'); }
+    $('#pc-rows').innerHTML = periodRowsHtml(list);
+  });
+  $('#pc-save').addEventListener('click', ()=>{
+    const s = $all('.pc-s').map(x=>x.value), e = $all('.pc-e').map(x=>x.value);
+    if(s.some(x=>!x) || e.some(x=>!x)){ alert('Fill every start and end time.'); return; }
+    setSetting('periods', s.map((x,i)=>({s:x, e:e[i]}))); applyPeriodConfig(); renderAdminTimetable();
+  });
+}
+
 /* ============================= APP STATE ============================= */
 const state = {
   role:null, studentId:null, teacherId:null,
   studentTab:'dashboard', teacherTab:'dashboard', adminTab:'overview',
-  markSubject:null, markDate:'2026-09-14', markPeriod:1, markLoaded:false, markDraft:{},
+  markSubject:null, markDate:todayStr(), markPeriod:1, markLoaded:false, markDraft:{},
   recFilters:{subject:'all', month:'all', q:''},
   reportSubject:null, reportMonth:null,
   studentForm:null, studentSearch:'',
@@ -535,7 +815,9 @@ const state = {
   adminAttFilters:{classId:'all', subjectId:'all', teacherId:'all', month:'all', q:''},
   studentCalMonth:null, studentCalDate:null,
   teacherCalMonth:null, teacherCalSubject:'all', teacherCalDate:null,
-  adminCalMonth:null, adminCalClass:'all', adminCalDate:null
+  adminCalMonth:null, adminCalClass:'all', adminCalDate:null,
+  adminTimetableClass:null, holidayForm:null,
+  sessionDraft:{topics:'', files:[]}
 };
 
 /* ============================= LOGIN / NAV ============================= */
@@ -573,9 +855,10 @@ function login(role){
   if(role==='student'){
     const reg = $('#student-reg').value.trim();
     const dob = $('#student-pass').value.trim();
-    if(!reg || !dob){ showLoginError('student', 'Enter your register number and date of birth.'); return; }
+    if(!reg || !dob){ showLoginError('student', 'Enter your register number and phone number.'); return; }
     const student = DB.students.find(s=>s.regNo.toLowerCase()===reg.toLowerCase());
-    if(!student || student.dob !== dob){ showLoginError('student', 'Register number or date of birth is incorrect.'); return; }
+    const dg = v=>String(v||'').replace(/\D/g,'');
+    if(!student || !dg(student.phone) || dg(student.phone) !== dg(dob)){ showLoginError('student', 'Register number or phone number is incorrect.'); return; }
     state.role = 'student';
     state.studentId = student.id;
     $('#student-reg').value=''; $('#student-pass').value='';
@@ -635,7 +918,7 @@ function enterApp(){
 /* ============================= STUDENT DASHBOARD ============================= */
 function renderStudentSidebar(){
   const student = DB.students.find(s=>s.id===state.studentId);
-  const tabs = [['dashboard','Dashboard'],['calendar','Calendar']];
+  const tabs = [['dashboard','Dashboard'],['timetable','My Timetable'],['calendar','Attendance Calendar'],['content','My Content'],['holidays','Academic Calendar']];
   $('#student-sidebar').innerHTML = '<div class="side-title">'+student.name+'</div><div class="side-sub">'+student.regNo+'</div>'
     + tabs.map(t=>'<button class="sidebar-link '+(state.studentTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#student-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
@@ -647,7 +930,78 @@ function renderStudentSidebar(){
 
 function renderStudentContent(){
   if(state.studentTab==='calendar') return renderStudentCalendar();
+  if(state.studentTab==='timetable') return renderStudentTimetable();
+  if(state.studentTab==='content') return renderStudentContentTab();
+  if(state.studentTab==='holidays') return renderHolidayListView('student');
   return renderStudentDashboard();
+}
+
+function renderStudentTimetable(){
+  const student = DB.students.find(s=>s.id===state.studentId);
+  const cls = DB.classes.find(c=>c.id===student.classId);
+  let html = '<div class="page-head"><div><h1>My Timetable</h1><div class="sub">'+(cls?cls.course+' · Semester '+cls.semester+' · Section '+cls.section:'')+'</div></div></div>';
+  html += '<div class="card" style="overflow-x:auto;">' + timetableGridHtml(student.classId, null) + '</div>';
+  $('#student-content').innerHTML = html;
+}
+
+function renderStudentContentTab(){
+  const student = DB.students.find(s=>s.id===state.studentId);
+  const subjectIds = new Set(DB.subjects.filter(su=>su.classId===student.classId).map(s=>s.id));
+  const sessions = DB.sessions.filter(s=>subjectIds.has(s.subjectId) && (s.topics || (s.files&&s.files.length)))
+    .slice().sort((a,b)=> a.date<b.date?1:-1);
+
+  let html = '<div class="page-head"><div><h1>My Content</h1><div class="sub">Topics covered and files shared by your faculty, class by class.</div></div></div>';
+  if(!sessions.length){
+    html += '<div class="card"><p class="empty">Nothing has been shared yet. Notes and files your faculty add after class will appear here.</p></div>';
+  } else {
+    html += sessions.map(s=>{
+      const su = DB.subjects.find(x=>x.id===s.subjectId);
+      const t = su ? DB.teachers.find(x=>x.id===su.teacherId) : null;
+      return '<div class="session-card"><div class="sc-head"><span class="sc-title">'+(su?su.name:'—')+' · Period '+s.period+'</span><span class="sc-date">'+s.date+(t?' · '+t.name:'')+'</span></div>'
+        + (s.topics ? '<div class="sc-topics">'+escapeHtml(s.topics)+'</div>' : '<p class="sub" style="margin:6px 0;">No written notes for this class.</p>')
+        + fileChipListHtml(s.files)
+        + '</div>';
+    }).join('');
+  }
+  $('#student-content').innerHTML = html;
+}
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderHolidayListView(role){
+  const list = DB.holidays.slice().sort((a,b)=> a.date<b.date?-1:1);
+  let html = '<div class="page-head"><div><h1>Academic Calendar</h1><div class="sub">Institution holidays and events.</div></div></div>';
+  html += '<div class="card">' + (list.length
+    ? list.map(h=>'<div class="holiday-row"><span class="holiday-date">'+h.date+'</span><span class="holiday-name">'+h.name+'</span><span class="badge badge-'+(h.type==='Holiday'?'danger':'warning')+'">'+h.type+'</span></div>').join('')
+    : '<p class="empty">No holidays have been added yet.</p>') + '</div>';
+  $('#'+role+'-content').innerHTML = html;
+}
+
+/* Renders a Mon–Sat × period timetable grid for a class.
+   onCellClick(day, period, entry) — if provided, cells become clickable (used by admin editor via renderAdminTimetable itself). */
+function timetableGridHtml(classId, highlightTeacherId){
+  let rows = '<tr><th>Period</th>' + WEEKDAYS.map(d=>'<th>'+d+'</th>').join('') + '</tr>';
+  PERIODS.forEach(period=>{
+    rows += '<tr><td class="tt-period-label">P'+period+'<div class="tt-period-time">'+PERIOD_TIMES[period]+'</div></td>';
+    WEEKDAYS.forEach(day=>{
+      const entry = timetableEntry(classId, day, period);
+      const su = entry ? DB.subjects.find(x=>x.id===entry.subjectId) : null;
+      const t = su ? DB.teachers.find(x=>x.id===su.teacherId) : null;
+      if(su){
+        const dim = highlightTeacherId && su.teacherId!==highlightTeacherId;
+        rows += '<td><div class="tt-cell-view" style="'+(dim?'opacity:.35;':'')+'"><span class="tt-sub">'+su.name+'</span>'+(t?'<span class="tt-teach">'+t.name+'</span>':'')+'</div></td>';
+      } else if(entry && entry.text){
+        const dim = highlightTeacherId ? 'opacity:.35;' : '';
+        rows += '<td><div class="tt-cell-view" style="'+dim+'"><span class="tt-sub">'+escapeHtml(entry.text)+'</span></div></td>';
+      } else {
+        rows += '<td><div class="tt-empty-cell">—</div></td>';
+      }
+    });
+    rows += '</tr>';
+  });
+  return '<table class="tt-table">'+rows+'</table>';
 }
 
 function renderStudentDashboard(){
@@ -734,7 +1088,7 @@ function studentCalDetailHtml(student, dateStr){
 /* ============================= TEACHER DASHBOARD ============================= */
 function renderTeacherSidebar(){
   const teacher = DB.teachers.find(t=>t.id===state.teacherId);
-  const tabs = [['dashboard','Dashboard'],['mark','Mark attendance'],['calendar','Calendar'],['records','Attendance records'],['reports','Reports']];
+  const tabs = [['dashboard','Dashboard'],['timetable','My Timetable'],['mark','Mark attendance'],['calendar','Calendar'],['records','Attendance records'],['content','My Content'],['reports','Reports']];
   $('#teacher-sidebar').innerHTML = '<div class="side-title">'+teacher.name+'</div><div class="side-sub">'+teacher.teacherId+'</div>'
     + tabs.map(t=>'<button class="sidebar-link '+(state.teacherTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#teacher-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
@@ -747,16 +1101,46 @@ function renderTeacherSidebar(){
 function renderTeacherContent(){
   const teacher = DB.teachers.find(t=>t.id===state.teacherId);
   if(state.teacherTab==='dashboard') return renderTeacherDashboard(teacher);
+  if(state.teacherTab==='timetable') return renderTeacherTimetable(teacher);
   if(state.teacherTab==='mark') return renderTeacherMark(teacher);
   if(state.teacherTab==='calendar') return renderTeacherCalendar(teacher);
   if(state.teacherTab==='records') return renderTeacherRecords(teacher);
+  if(state.teacherTab==='content') return renderTeacherContentTab(teacher);
   if(state.teacherTab==='reports') return renderTeacherReports(teacher);
+}
+
+function openClassFromButton(subjectId, period, date){
+  state.teacherTab = 'mark';
+  state.markSubject = subjectId;
+  state.markDate = date || todayStr();
+  state.markPeriod = period;
+  state.markLoaded = false;
+  state.markDraft = {};
+  renderTeacherSidebar();
+  renderTeacherContent();
 }
 
 function renderTeacherDashboard(teacher){
   const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
   const classIds = new Set(subjects.map(s=>s.classId));
   let html = '<div class="page-head"><div><h1>Welcome back, '+teacher.name.split(' ')[0]+'</h1><div class="sub">'+subjects.length+' subjects · '+classIds.size+' classes</div></div></div>';
+
+  const day = state.teacherDay || (WEEKDAYS.indexOf(todayDayName())>-1 ? todayDayName() : 'Mon'), dDate = dateForDay(day);
+  html += '<div class="card"><h3>My classes · '+day+' ('+dDate+')</h3><div class="day-chips">'
+    + WEEKDAYS.map(d=>'<button class="day-chip '+(d===day?'on':'')+'" data-day="'+d+'">'+d+(d===todayDayName()?' ●':'')+'</button>').join('')+'</div>';
+  const today = teacherClassesOn(teacher, day);
+  if(!today.length){ html += '<p class="empty">No classes on '+day+'.</p>'; }
+  else {
+    html += '<div class="today-grid">' + today.map(tt=>{
+      const su = DB.subjects.find(x=>x.id===tt.subjectId), cls = DB.classes.find(x=>x.id===tt.classId);
+      const already = DB.attendance.some(a=>a.subjectId===tt.subjectId && a.date===dDate && a.period===tt.period);
+      return '<button class="class-btn '+(already?'cb-done':'')+'" data-open-subject="'+tt.subjectId+'" data-open-period="'+tt.period+'" data-open-date="'+dDate+'">'
+        + '<span class="cb-time">Period '+tt.period+' · '+PERIOD_TIMES[tt.period]+'</span>'
+        + '<span class="cb-subject">'+(su?su.name:'—')+'</span>'
+        + '<span class="cb-meta">'+(cls?cls.course+' S'+cls.semester+'-'+cls.section:'')+(already?' · Marked ✓':' · Tap to mark attendance')+'</span></button>';
+    }).join('') + '</div>';
+  }
+  html += '</div>';
 
   html += '<div class="stat-grid">'
     + '<div class="stat-card"><div class="num">'+subjects.length+'</div><div class="label">Subjects assigned</div></div>'
@@ -774,6 +1158,57 @@ function renderTeacherDashboard(teacher){
     + '</tbody></table></div>';
 
   $('#teacher-content').innerHTML = html;
+  $all('[data-open-subject]').forEach(btn=>btn.addEventListener('click', ()=>{
+    openClassFromButton(btn.dataset.openSubject, Number(btn.dataset.openPeriod), btn.dataset.openDate);
+  }));
+  $all('.day-chip').forEach(b=>b.addEventListener('click', ()=>{ state.teacherDay = b.dataset.day; renderTeacherDashboard(teacher); }));
+}
+
+function renderTeacherTimetable(teacher){
+  const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
+  const classIds = Array.from(new Set(subjects.map(s=>s.classId)));
+  let html = '<div class="page-head"><div><h1>My Timetable</h1><div class="sub">Your classes highlighted across the week; other classes shown faded.</div></div></div>';
+  if(!classIds.length){
+    html += '<div class="card"><p class="empty">No subjects are assigned to you yet.</p></div>';
+  } else {
+    classIds.forEach(cid=>{
+      const cls = DB.classes.find(c=>c.id===cid);
+      html += '<div class="card" style="overflow-x:auto;"><h3>'+(cls?cls.course+' · Semester '+cls.semester+' · Section '+cls.section:cid)+'</h3>' + timetableGridHtml(cid, teacher.id) + '</div>';
+    });
+  }
+  $('#teacher-content').innerHTML = html;
+}
+
+function renderTeacherContentTab(teacher){
+  const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
+  const subjectIds = new Set(subjects.map(s=>s.id));
+  const sessions = DB.sessions.filter(s=>subjectIds.has(s.subjectId) && (s.topics || (s.files&&s.files.length)))
+    .slice().sort((a,b)=> a.date<b.date?1:-1);
+
+  let html = '<div class="page-head"><div><h1>My Content</h1><div class="sub">Class notes and files you\'ve shared, visible to your students. Edit any entry from Mark attendance.</div></div></div>';
+  if(!sessions.length){
+    html += '<div class="card"><p class="empty">Nothing logged yet. After marking attendance, use the "Class notes" box to add topics covered and files.</p></div>';
+  } else {
+    html += sessions.map(s=>{
+      const su = DB.subjects.find(x=>x.id===s.subjectId);
+      return '<div class="session-card"><div class="sc-head"><span class="sc-title">'+(su?su.name:'—')+' · Period '+s.period+'</span><span class="sc-date">'+s.date+'</span></div>'
+        + (s.topics ? '<div class="sc-topics">'+escapeHtml(s.topics)+'</div>' : '<p class="sub" style="margin:6px 0;">No written notes.</p>')
+        + fileChipListHtml(s.files)
+        + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-ghost btn-sm" data-edit-session="'+su.id+'" data-edit-date="'+s.date+'" data-edit-period="'+s.period+'">Edit</button></div>'
+        + '</div>';
+    }).join('');
+  }
+  $('#teacher-content').innerHTML = html;
+  $all('[data-edit-session]').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.teacherTab = 'mark';
+    state.markSubject = btn.dataset.editSession;
+    state.markDate = btn.dataset.editDate;
+    state.markPeriod = Number(btn.dataset.editPeriod);
+    state.markLoaded = false;
+    state.markDraft = {};
+    renderTeacherSidebar();
+    renderTeacherContent();
+  }));
 }
 
 function renderTeacherMark(teacher){
@@ -791,7 +1226,7 @@ function renderTeacherMark(teacher){
   html += '<div class="card"><div class="form-row">'
     + '<div class="field"><label>Subject</label><select id="mark-subject">' + subjects.map(su=>'<option value="'+su.id+'" '+(su.id===state.markSubject?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Date</label><input type="date" id="mark-date" value="'+state.markDate+'"/></div>'
-    + '<div class="field"><label>Period</label><select id="mark-period">' + [1,2,3,4].map(p=>'<option value="'+p+'" '+(p===state.markPeriod?'selected':'')+'>Period '+p+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Period</label><select id="mark-period">' + PERIODS.map(p=>'<option value="'+p+'" '+(p===state.markPeriod?'selected':'')+'>Period '+p+' · '+PERIOD_TIMES[p]+'</option>').join('') + '</select></div>'
     + '</div><button class="btn btn-ghost" id="load-students-btn">Load class list</button></div>';
 
   const subject = DB.subjects.find(s=>s.id===state.markSubject);
@@ -808,17 +1243,29 @@ function renderTeacherMark(teacher){
             + '</div></td></tr>';
         }).join('')
       + '</tbody></table><button class="btn btn-primary" id="save-attendance-btn" style="margin-top:16px;">Save attendance</button><span id="save-confirm" class="save-confirm"></span></div>';
+
+    // Class notes: topics covered + files, saved against this exact subject/date/period, visible to students.
+    const existingSession = getSession(state.markSubject, state.markDate, state.markPeriod);
+    const draftTopics = state.sessionDraft.topics || (existingSession ? existingSession.topics : '') || '';
+    const draftFiles = state.sessionDraft.files.length ? state.sessionDraft.files : (existingSession ? existingSession.files : []) || [];
+    html += '<div class="card"><h3>Class notes</h3><p class="sub" style="margin-bottom:12px;">What did you cover in this class? Students in '+subject.name+' will see this along with any files you attach.</p>'
+      + '<div class="field"><label>Topics covered</label><textarea id="session-topics" placeholder="e.g. Covered Chapter 4 — Capital Budgeting techniques: NPV and IRR with worked examples.">'+escapeHtml(draftTopics)+'</textarea></div>'
+      + '<div class="field"><label>Attach files (slides, notes, worksheets)</label><input type="file" id="session-files" multiple/></div>'
+      + fileChipListHtml(draftFiles)
+      + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="save-session-btn">Save class notes</button><span id="session-confirm" class="save-confirm"></span></div>'
+      + '</div>';
   }
 
   $('#teacher-content').innerHTML = html;
 
-  $('#mark-subject').addEventListener('change', e=>{ state.markSubject=e.target.value; state.markLoaded=false; state.markDraft={}; renderTeacherMark(teacher); });
-  $('#mark-date').addEventListener('change', e=>{ state.markDate=e.target.value; });
-  $('#mark-period').addEventListener('change', e=>{ state.markPeriod=Number(e.target.value); });
+  $('#mark-subject').addEventListener('change', e=>{ state.markSubject=e.target.value; state.markLoaded=false; state.markDraft={}; state.sessionDraft={topics:'',files:[]}; renderTeacherMark(teacher); });
+  $('#mark-date').addEventListener('change', e=>{ state.markDate=e.target.value; state.sessionDraft={topics:'',files:[]}; });
+  $('#mark-period').addEventListener('change', e=>{ state.markPeriod=Number(e.target.value); state.sessionDraft={topics:'',files:[]}; });
   $('#load-students-btn').addEventListener('click', ()=>{
     state.markLoaded = true;
     state.markDraft = {};
     students.forEach(s=>state.markDraft[s.id]='P');
+    state.sessionDraft = {topics:'', files:[]};
     renderTeacherMark(teacher);
   });
 
@@ -836,7 +1283,7 @@ function renderTeacherMark(teacher){
       renderTeacherMark(teacher);
     });
     $('#save-attendance-btn').addEventListener('click', ()=>{
-      const date = state.markDate || '2026-09-14';
+      const date = state.markDate || todayStr();
       const period = state.markPeriod || 1;
       const touched = [];
       Object.entries(state.markDraft).forEach(([studentId, status])=>{
@@ -846,6 +1293,25 @@ function renderTeacherMark(teacher){
       });
       syncBulkUpsert('attendance', touched);
       $('#save-confirm').textContent = 'Saved '+Object.keys(state.markDraft).length+' records for '+date+'.';
+    });
+
+    $('#session-topics').addEventListener('input', e=>{ state.sessionDraft.topics = e.target.value; });
+    $('#session-files').addEventListener('change', e=>{
+      $('#session-confirm').textContent = 'Reading files…';
+      readFilesAsDataUrls(e.target.files).then(({files, oversized})=>{
+        state.sessionDraft.files = (state.sessionDraft.files||[]).concat(files);
+        if(oversized.length) alert('Skipped (too large, 6MB max): '+oversized.join(', '));
+        renderTeacherMark(teacher);
+      });
+    });
+    $('#save-session-btn').addEventListener('click', ()=>{
+      const date = state.markDate || todayStr();
+      const period = state.markPeriod || 1;
+      const existingSession = getSession(state.markSubject, date, period);
+      const files = state.sessionDraft.files.length ? state.sessionDraft.files : (existingSession ? existingSession.files : []) || [];
+      const topics = $('#session-topics').value;
+      saveSession(state.markSubject, subject.classId, teacher.id, date, period, topics, files);
+      $('#session-confirm').textContent = 'Saved — visible to students now.';
     });
   }
 }
@@ -1015,12 +1481,12 @@ function renderTeacherReports(teacher){
 
 /* ============================= ADMIN DASHBOARD ============================= */
 function renderAdminSidebar(){
-  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['attendance','Attendance'],['calendar','Calendar'],['analytics','Analytics']];
+  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['timetable','Timetable'],['holidays','Holidays'],['attendance','Attendance'],['calendar','Calendar'],['analytics','Analytics'],['settings','Settings']];
   $('#admin-sidebar').innerHTML = '<div class="side-title">Administrator</div><div class="side-sub">Full access</div>'
     + tabs.map(t=>'<button class="sidebar-link '+(state.adminTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#admin-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
     state.adminTab = btn.dataset.tab;
-    state.studentForm=null; state.teacherForm=null; state.subjectForm=null; state.classForm=null;
+    state.studentForm=null; state.teacherForm=null; state.subjectForm=null; state.classForm=null; state.holidayForm=null;
     renderAdminSidebar();
     renderAdminContent();
   }));
@@ -1030,9 +1496,304 @@ function renderAdminContent(){
   const map = {
     overview:renderAdminOverview, students:renderAdminStudents, teachers:renderAdminTeachers,
     subjects:renderAdminSubjects, classes:renderAdminClasses, attendance:renderAdminAttendance,
-    calendar:renderAdminCalendar, analytics:renderAdminAnalytics
+    calendar:renderAdminCalendar, analytics:renderAdminAnalytics,
+    timetable:renderAdminTimetable, holidays:renderAdminHolidays, settings:renderAdminSettings
   };
   map[state.adminTab]();
+}
+
+/* --- Timetable --- */
+function renderAdminTimetable(){
+  if(!state.adminTimetableClass || !DB.classes.find(c=>c.id===state.adminTimetableClass)) state.adminTimetableClass = DB.classes[0] ? DB.classes[0].id : null;
+  let html = '<div class="page-head"><div><h1>Timetable</h1><div class="sub">Set the weekly schedule per class. Changes save automatically and sync live.</div></div></div>';
+
+  if(!DB.classes.length){
+    html += '<div class="card"><p class="empty">Add a class first.</p></div>';
+    $('#admin-content').innerHTML = html;
+    return;
+  }
+
+  html += '<div class="card"><div class="field" style="max-width:320px;"><label>Class</label><select id="tt-class">'
+    + DB.classes.map(c=>'<option value="'+c.id+'" '+(c.id===state.adminTimetableClass?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('')
+    + '</select></div></div>';
+
+  const classId = state.adminTimetableClass;
+  const subjectsForClass = DB.subjects.filter(su=>su.classId===classId);
+
+  let rows = '<tr><th>Period</th>' + WEEKDAYS.map(d=>'<th>'+d+'</th>').join('') + '</tr>';
+  PERIODS.forEach(period=>{
+    rows += '<tr><td class="tt-period-label">P'+period+'<div class="tt-period-time">'+PERIOD_TIMES[period]+'</div></td>';
+    WEEKDAYS.forEach(day=>{
+      const entry = timetableEntry(classId, day, period);
+      const isText = !!(entry && !entry.subjectId && entry.text);
+      rows += '<td><select data-tt-day="'+day+'" data-tt-period="'+period+'"><option value="">— free —</option>'
+        + subjectsForClass.map(su=>'<option value="'+su.id+'" '+(entry && entry.subjectId===su.id?'selected':'')+'>'+su.name+' — '+teacherName(su)+'</option>').join('')
+        + '<option value="__text__" '+(isText?'selected':'')+'>✎ Write custom text…</option>'
+        + '</select>'
+        + '<input type="text" class="tt-text" data-tt-text-day="'+day+'" data-tt-text-period="'+period+'" maxlength="60" placeholder="e.g. Lab, Library, Seminar" value="'+(isText?escapeHtml(entry.text):'')+'" style="'+(isText?'':'display:none;')+'margin-top:4px;font-size:0.78rem;padding:6px 8px;width:100%;"/></td>';
+    });
+    rows += '</tr>';
+  });
+  html += periodEditorHtml() + '<div class="card" style="overflow-x:auto;"><h3>Weekly timetable (subject — faculty)</h3><table class="tt-table">'+rows+'</table></div>';
+
+  $('#admin-content').innerHTML = html;
+  bindPeriodEditor();
+  $('#tt-class').addEventListener('change', e=>{ state.adminTimetableClass = e.target.value; renderAdminTimetable(); });
+  // Save one cell. mode: free | subject | text
+  function saveCell(day, period, subjectId, text){
+    const id = 'TT_'+classId+'_'+day+'_'+period;
+    const existing = DB.timetable.find(t=>t.id===id);
+    if(!subjectId && !text){
+      if(existing){ DB.timetable = DB.timetable.filter(t=>t.id!==id); syncDelete('timetable', id); }
+      return;
+    }
+    if(existing){ existing.subjectId = subjectId; existing.text = text; syncUpsert('timetable', existing); }
+    else{ const rec = {id, classId, day, period, subjectId, text}; DB.timetable.push(rec); syncUpsert('timetable', rec); }
+  }
+  function textBox(day, period){ return document.querySelector('[data-tt-text-day="'+day+'"][data-tt-text-period="'+period+'"]'); }
+
+  $all('[data-tt-day]').forEach(sel=>sel.addEventListener('change', e=>{
+    const day = sel.dataset.ttDay, period = Number(sel.dataset.ttPeriod), val = e.target.value;
+    const tb = textBox(day, period);
+    if(val === '__text__'){            // show the box; saved once something is typed
+      tb.style.display = ''; tb.focus();
+      saveCell(day, period, '', tb.value.trim());
+    } else {                           // free or subject: hide + clear the box
+      tb.style.display = 'none'; tb.value = '';
+      saveCell(day, period, val, '');
+    }
+  }));
+  $all('[data-tt-text-day]').forEach(tb=>tb.addEventListener('change', ()=>{
+    saveCell(tb.dataset.ttTextDay, Number(tb.dataset.ttTextPeriod), '', tb.value.trim());
+  }));
+}
+
+/* --- Holidays --- */
+function holidayFormHtml(){
+  const editing = state.holidayForm;
+  const h = editing || {date:'', name:'', type:'Holiday'};
+  return '<h3>'+(editing?'Edit entry':'Add holiday / event')+'</h3>'
+    + '<div class="form-grid">'
+    + '<div class="field"><label>Date</label><input id="f-hdate" type="date" value="'+h.date+'"/></div>'
+    + '<div class="field"><label>Name</label><input id="f-hname" value="'+h.name+'" placeholder="e.g. Republic Day"/></div>'
+    + '<div class="field"><label>Type</label><select id="f-htype">' + ['Holiday','Event'].map(g=>'<option '+(g===h.type?'selected':'')+'>'+g+'</option>').join('') + '</select></div>'
+    + '</div><div class="btn-row"><button class="btn btn-primary" id="save-holiday-btn">'+(editing?'Save changes':'Add')+'</button>'
+    + (editing?'<button class="btn btn-ghost" id="cancel-holiday-btn">Cancel</button>':'') + '</div>';
+}
+
+function renderAdminHolidays(){
+  const list = DB.holidays.slice().sort((a,b)=> a.date<b.date?-1:1);
+  let html = '<div class="page-head"><div><h1>Holidays</h1><div class="sub">'+DB.holidays.length+' entries · shown to students and teachers under Academic Calendar</div></div></div>';
+  html += '<div class="card">' + holidayFormHtml() + '</div>';
+  html += '<div class="card">' + (list.length
+    ? list.map(h=>'<div class="holiday-row"><span class="holiday-date">'+h.date+'</span><span class="holiday-name">'+h.name+'</span><span class="badge badge-'+(h.type==='Holiday'?'danger':'warning')+'">'+h.type+'</span>'
+      + '<span class="btn-row"><button class="btn btn-ghost btn-sm" data-edit-h="'+h.id+'">Edit</button><button class="btn btn-ghost btn-sm" data-del-h="'+h.id+'">Delete</button></span></div>').join('')
+    : '<p class="empty">No holidays added yet.</p>') + '</div>';
+
+  $('#admin-content').innerHTML = html;
+  $('#save-holiday-btn').addEventListener('click', ()=>{
+    const data = {date:$('#f-hdate').value, name:$('#f-hname').value.trim(), type:$('#f-htype').value};
+    if(!data.date || !data.name){ alert('Date and name are required.'); return; }
+    let saved;
+    if(state.holidayForm){ Object.assign(state.holidayForm, data); saved = state.holidayForm; }
+    else{ saved = Object.assign({id:uid('HOL')}, data); DB.holidays.push(saved); }
+    syncUpsert('holidays', saved);
+    state.holidayForm = null;
+    renderAdminHolidays();
+  });
+  const c = $('#cancel-holiday-btn');
+  if(c) c.addEventListener('click', ()=>{ state.holidayForm=null; renderAdminHolidays(); });
+  $all('[data-edit-h]').forEach(b=>b.addEventListener('click', ()=>{ state.holidayForm = DB.holidays.find(h=>h.id===b.dataset.editH); renderAdminHolidays(); }));
+  $all('[data-del-h]').forEach(b=>b.addEventListener('click', ()=>{
+    if(confirm('Delete this entry?')){
+      syncDelete('holidays', b.dataset.delH);
+      DB.holidays = DB.holidays.filter(h=>h.id!==b.dataset.delH);
+      renderAdminHolidays();
+    }
+  }));
+}
+
+/* ============================= IMPORT OLD WORKBOOK (.xlsx) ============================= */
+/* Reads a workbook downloaded from the old Google Sheet (tabs: classes, teachers, subjects,
+   students, attendance; timetable/holidays/sessions optional) and loads it into the app. */
+const IMPORT_SCHEMA = {
+  classes:['id','course','semester','section','year'],
+  teachers:['id','teacherId','name','password','status'],
+  subjects:['id','code','name','semester','teacherId','classId'],
+  students:['id','regNo','name','dob','gender','course','dept','semester','section','email','phone','admissionYear','status','classId'],
+  attendance:['id','studentId','subjectId','teacherId','date','period','status'],
+  timetable:['id','classId','day','period','subjectId'],
+  holidays:['id','date','name','type'],
+  sessions:['id','subjectId','classId','teacherId','date','period','topics','files'],
+  settings:['id','value']
+};
+const IMPORT_NUM = {semester:1, period:1};
+function normImportCell(k, v){
+  if(v === null || v === undefined || v === '') return IMPORT_NUM[k] ? null : (k === 'files' ? [] : '');
+  if(v instanceof Date){ return new Date(v.getTime() - v.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+  if(IMPORT_NUM[k]){ const n = Number(v); return isNaN(n) ? null : n; }
+  if(k === 'files'){ try{ return JSON.parse(v); }catch(e){ return []; } }
+  return String(v).trim();
+}
+function workbookToTables(wb){
+  const tables = {}; let found = 0;
+  SYNC_TABLES.forEach(t=>{
+    const name = wb.SheetNames.find(n=>n.trim().toLowerCase() === t);
+    if(!name){ tables[t] = []; return; }
+    found++;
+    const raw = XLSX.utils.sheet_to_json(wb.Sheets[name], {defval:'', raw:true});
+    tables[t] = raw.map(r=>{
+      const lower = {}; Object.keys(r).forEach(h=>{ lower[h.trim().toLowerCase()] = r[h]; });
+      const o = {};
+      IMPORT_SCHEMA[t].forEach(k=>{ o[k] = normImportCell(k, lower[k.toLowerCase()]); });
+      return o;
+    }).filter(o=>o.id);
+  });
+  return {tables, found};
+}
+function handleOldWorkbook(e){
+  const input = e.target, file = input.files && input.files[0];
+  if(!file) return;
+  const st = $('#import-status');
+  if(typeof XLSX === 'undefined'){ alert('Excel support failed to load — check your internet connection and reload the page.'); return; }
+  const reader = new FileReader();
+  reader.onload = async ()=>{
+    try{
+      const wb = XLSX.read(reader.result, {type:'array', cellDates:true});
+      const res = workbookToTables(wb);
+      if(!res.found){ alert('None of the expected tabs (classes, teachers, subjects, students, attendance) were found in that file.'); return; }
+      const summary = SYNC_TABLES.map(t=> t+': '+res.tables[t].length+' rows').join('\n');
+      if(!confirm('Replace ALL data currently in this app with the contents of this file?\n\n'+summary)) return;
+      SYNC_TABLES.forEach(t=>{ if(t==='settings' && !res.tables[t].length) return; DB[t] = res.tables[t]; });
+      applyPeriodConfig(); applyBrand();
+      if(BACKEND_ON()){
+        st.textContent = 'Imported. Uploading to Firebase…';
+        await syncSeedAll();
+        st.textContent = 'Imported and uploaded to Firebase.';
+      } else {
+        st.textContent = 'Imported into this session. Now enter your Firebase details above and click Save & test connection to upload it.';
+      }
+    }catch(err){ alert('Could not read that file: '+err.message); }
+    input.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* --- Settings (Firebase link + backup/restore) --- */
+const SETUP_SCRIPT = "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{collection}/{docId} {\n      allow read, write: if collection in ['classes','teachers','subjects','students','attendance','timetable','holidays','sessions','settings'];\n    }\n  }\n}\n";
+
+function renderAdminSettings(){
+  const cfg = getSupabaseCfg();
+  const connected = BACKEND_ON();
+  let html = '<div class="page-head"><div><h1>Settings</h1><div class="sub">Connect a Firebase Firestore database so every device shares the same live data.</div></div></div>';
+
+  html += '<div class="card"><h3>Database connection <span class="status-pill '+(connected?'status-connected':'status-disconnected')+'" style="margin-left:8px;">'+(connected?'Connected':'Not connected — running on this device only')+'</span></h3>'
+    + '<div class="form-row">'
+    + '<div class="field"><label>Firebase Project ID</label><input id="sb-url" placeholder="my-attendance-app" value="'+cfg.url+'"/></div>'
+    + '<div class="field"><label>Firebase Web API key</label><input id="sb-key" placeholder="AIza..." value="'+cfg.key+'"/></div>'
+    + '</div>'
+    + '<div class="btn-row"><button class="btn btn-primary" id="sb-save">Save &amp; test connection</button>'
+    + (connected ? '<button class="btn btn-ghost" id="sb-pull">Reload from database</button><button class="btn btn-ghost" id="sb-push">Push local data up</button><button class="btn btn-ghost" id="sb-disconnect">Disconnect</button>' : '')
+    + '</div><div id="sb-status" class="sub" style="margin-top:10px;"></div></div>';
+
+  html += '<div class="card"><h3>One-time setup: Firestore rules</h3><p class="sub" style="margin-bottom:10px;">1) At console.firebase.google.com create a project. 2) Build &gt; Firestore Database &gt; Create database (any region, production mode). 3) Open the Rules tab, replace everything with the rules below, and Publish. 4) Project settings (gear icon) &gt; General: copy the <b>Project ID</b> and <b>Web API key</b> into the boxes above. Collections are created automatically. Class-note file attachments are not stored (only their names). These rules let anyone who has your key read and write, so keep the file and key within your college.</p>'
+    + '<div class="sql-box" id="sb-sql">' + escapeHtml(SETUP_SCRIPT) + '</div>'
+    + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-ghost btn-sm" id="sb-copy-sql">Copy rules</button></div></div>';
+
+  const bd = getSetting('brand', {});
+  html += '<div class="card"><h3>College logo &amp; front page</h3><div class="form-row">'
+    + '<div class="field"><label>College name</label><input id="bn-name" value="'+escapeHtml(bd.name||'')+'"/></div>'
+    + '<div class="field"><label>Tagline</label><input id="bn-tag" value="'+escapeHtml(bd.tagline||'')+'"/></div></div>'
+    + '<div class="field"><label>Front page details (address, contact, notice…)</label><textarea id="bn-det" rows="3">'+escapeHtml(bd.details||'')+'</textarea></div>'
+    + '<div class="field"><label>Logo (PNG/JPG)</label><input type="file" id="bn-logo" accept="image/*"/></div>'
+    + '<div class="btn-row"><button class="btn btn-primary btn-sm" id="bn-save">Save front page</button></div></div>';
+  html += '<div class="card"><h3>Import old data (Excel)</h3><p class="sub" style="margin-bottom:10px;">'
+    + 'In your old Google Sheet choose File &gt; Download &gt; Microsoft Excel (.xlsx), then pick that file here. Tabs named classes, teachers, subjects, students and attendance are loaded. '
+    + '<b>Do this before connecting Firebase</b> (or while connected), so the sample data is replaced by your real data.</p>'
+    + '<div class="btn-row"><label class="btn btn-primary btn-sm file-btn">Choose old .xlsx file<input type="file" id="import-old" accept=".xlsx,.xls" hidden/></label></div>'
+    + '<div class="btn-row"><button class="btn btn-ghost btn-sm" id="export-all">Export everything to Excel</button></div><div id="import-status" class="sub" style="margin-top:10px;"></div></div>';
+
+  html += '<div class="card"><h3>Backup &amp; restore</h3><p class="sub" style="margin-bottom:10px;">Works even without a connected database — download everything as a file, or load one back in.</p>'
+    + '<div class="btn-row"><button class="btn btn-ghost btn-sm" id="backup-export">Download backup (.json)</button>'
+    + '<label class="btn btn-ghost btn-sm file-btn">Restore from backup<input type="file" id="backup-import" accept=".json" hidden/></label></div></div>';
+
+  $('#admin-content').innerHTML = html;
+
+  $('#import-old').addEventListener('change', handleOldWorkbook);
+  let pendingLogo = bd.logo || '';
+  $('#bn-logo').addEventListener('change', e=>{ if(e.target.files[0]) readLogo(e.target.files[0], d=>{ pendingLogo = d; }); });
+  $('#bn-save').addEventListener('click', ()=>{ setSetting('brand', {name:$('#bn-name').value.trim(), tagline:$('#bn-tag').value.trim(), details:$('#bn-det').value.trim(), logo:pendingLogo}); applyBrand(); alert('Front page saved.'); });
+  $('#export-all').addEventListener('click', ()=>{ const wb = XLSX.utils.book_new(); SYNC_TABLES.forEach(t=>XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(DB[t].map(r=>Object.assign({}, r, r.files?{files:JSON.stringify(r.files)}:{})), {header:IMPORT_SCHEMA[t]}), t)); XLSX.writeFile(wb, 'Attendance_Ledger_Data.xlsx'); });
+  $('#sb-save').addEventListener('click', async ()=>{
+    const url = $('#sb-url').value.trim();
+    const key = $('#sb-key').value.trim();
+    if(!url || !key){ $('#sb-status').textContent = 'Enter both the Project ID and the Web API key.'; return; }
+    $('#sb-status').textContent = 'Testing connection…';
+    const res = await testSupabaseConnection(url, key);
+    if(res.ok){
+      setSupabaseCfg(url, key);
+      $('#sb-status').textContent = 'Connected. Pushing your current data up so other devices can see it…';
+      await syncSeedAll();
+      $('#sb-status').textContent = 'Connected and synced.';
+      renderAdminSettings();
+    } else {
+      $('#sb-status').textContent = 'Could not connect: ' + res.msg;
+    }
+  });
+  const pullBtn = $('#sb-pull');
+  if(pullBtn) pullBtn.addEventListener('click', async ()=>{
+    $('#sb-status').textContent = 'Loading…';
+    const res = await apiGetAll();
+    if(res.ok){
+      SYNC_TABLES.forEach(t=>{ DB[t] = res.data[t] || []; });
+      applyPeriodConfig(); applyBrand();
+      $('#sb-status').textContent = 'Reloaded from the database.';
+      renderAdminContent();
+    } else {
+      $('#sb-status').textContent = 'Could not reach the database.';
+    }
+  });
+  const pushBtn = $('#sb-push');
+  if(pushBtn) pushBtn.addEventListener('click', async ()=>{
+    $('#sb-status').textContent = 'Pushing…';
+    await syncSeedAll();
+    $('#sb-status').textContent = 'Pushed local data to the database.';
+  });
+  const discBtn = $('#sb-disconnect');
+  if(discBtn) discBtn.addEventListener('click', ()=>{
+    if(confirm('Disconnect this device from the shared database? Data already saved there is untouched.')){
+      clearSupabaseCfg();
+      renderAdminSettings();
+    }
+  });
+  $('#sb-copy-sql').addEventListener('click', ()=>{
+    navigator.clipboard.writeText(SETUP_SCRIPT).then(()=>{
+      $('#sb-copy-sql').textContent = 'Copied!';
+      setTimeout(()=>{ $('#sb-copy-sql').textContent = 'Copy rules'; }, 1500);
+    });
+  });
+  $('#backup-export').addEventListener('click', ()=>{
+    const payload = {}; SYNC_TABLES.forEach(t=> payload[t]=DB[t]);
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'attendance-ledger-backup-'+todayStr()+'.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  });
+  $('#backup-import').addEventListener('change', e=>{
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const data = JSON.parse(reader.result);
+        SYNC_TABLES.forEach(t=>{ if(Array.isArray(data[t])) DB[t] = data[t]; });
+        if(confirm('Backup loaded. Push this data to the connected database now?') && BACKEND_ON()){
+          syncSeedAll();
+        }
+        renderAdminContent();
+      }catch(err){ alert('Could not read that backup file: '+err.message); }
+    };
+    reader.readAsText(file);
+  });
 }
 
 function renderAdminOverview(){
@@ -1078,10 +1839,11 @@ function studentFormHtml(){
 
 function renderAdminStudents(){
   let html = '<div class="page-head"><div><h1>Students</h1><div class="sub">'+DB.students.length+' records</div></div>'
-    + '<div class="btn-row"><label class="btn btn-ghost btn-sm file-btn">Import CSV<input type="file" id="import-students" accept=".csv" hidden/></label>'
+    + '<div class="btn-row"><label class="btn btn-ghost btn-sm file-btn">Import CSV / Excel<input type="file" id="import-students" accept=".csv,.xlsx,.xls" hidden/></label>'
     + '<button class="btn btn-ghost btn-sm" id="export-students">Export CSV</button></div></div>';
   html += '<div class="card" id="student-form-card">' + studentFormHtml() + '</div>';
-  html += '<div class="card"><input id="student-search" placeholder="Search by name or reg. no." value="'+state.studentSearch+'" style="margin-bottom:14px;max-width:320px;"/><div id="student-table-wrap"></div></div>';
+  html += '<div class="card"><p class="sub" style="margin-bottom:10px;">Bulk file columns, in order: Reg No, Name, DOB, Gender, Course, Dept, Semester, Section, Email, Phone, Admission Year, Status. The first row (headers) is skipped automatically — works for large lists in one go.</p>'
+    + '<input id="student-search" placeholder="Search by name or reg. no." value="'+state.studentSearch+'" style="margin-bottom:14px;max-width:320px;"/><div id="student-table-wrap"></div></div>';
 
   $('#admin-content').innerHTML = html;
   bindStudentFormEvents();
@@ -1145,30 +1907,52 @@ function renderStudentTable(){
   }));
 }
 
+function importStudentRows(rows){
+  const imported = [];
+  rows.forEach(cols=>{
+    if(!cols || cols.length<2) return;
+    const regNo=String(cols[0]||'').trim(), name=String(cols[1]||'').trim();
+    if(!regNo && !name) return;
+    const dob=cols[2]||'', gender=cols[3]||'', course=cols[4]||'', dept=cols[5]||'', semester=cols[6], section=cols[7]||'', email=cols[8]||'', phone=cols[9]||'', admissionYear=cols[10]||'', status=cols[11]||'';
+    const cls = DB.classes.find(c=>c.course===course && String(c.semester)===String(semester) && c.section===section) || DB.classes[0];
+    if(!cls) return;
+    const rec = {
+      id:uid('ST'), regNo:regNo||'', name:name||'Unnamed', dob:String(dob||''), gender:gender||'Other',
+      course:cls.course, dept:dept||'Commerce', semester:cls.semester, section:cls.section,
+      email:email||'', phone:String(phone||''), admissionYear:String(admissionYear||''), status:status||'Active', classId:cls.id
+    };
+    DB.students.push(rec);
+    imported.push(rec);
+  });
+  syncBulkUpsert('students', imported);
+  renderAdminStudents();
+  alert('Imported '+imported.length+' student'+(imported.length===1?'':'s')+'.');
+}
+
 function handleImportStudents(e){
   const file = e.target.files[0];
   if(!file) return;
+  const isExcel = /\.(xlsx|xls)$/i.test(file.name);
   const reader = new FileReader();
   reader.onload = ()=>{
-    const lines = reader.result.split(/\r?\n/).filter(l=>l.trim());
-    const imported = [];
-    lines.slice(1).forEach(line=>{
-      const cols = line.split(',');
-      if(cols.length<2) return;
-      const regNo=cols[0], name=cols[1], dob=cols[2], gender=cols[3], course=cols[4], dept=cols[5], semester=cols[6], section=cols[7], email=cols[8], phone=cols[9], admissionYear=cols[10], status=cols[11];
-      const cls = DB.classes.find(c=>c.course===course && String(c.semester)===String(semester) && c.section===section) || DB.classes[0];
-      const rec = {
-        id:uid('ST'), regNo:regNo||'', name:name||'Unnamed', dob:dob||'', gender:gender||'Other',
-        course:cls.course, dept:dept||'Commerce', semester:cls.semester, section:cls.section,
-        email:email||'', phone:phone||'', admissionYear:admissionYear||'', status:status||'Active', classId:cls.id
-      };
-      DB.students.push(rec);
-      imported.push(rec);
-    });
-    syncBulkUpsert('students', imported);
-    renderAdminStudents();
+    try{
+      if(isExcel){
+        if(typeof XLSX === 'undefined'){ alert('Excel support failed to load — try a CSV file instead.'); return; }
+        const wb = XLSX.read(reader.result, {type:'binary'});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, {header:1, raw:false, defval:''});
+        importStudentRows(rows.slice(1));
+      } else {
+        const lines = reader.result.split(/\r?\n/).filter(l=>l.trim());
+        const rows = lines.slice(1).map(line=>line.split(',').map(c=>c.trim().replace(/^"|"$/g,'')));
+        importStudentRows(rows);
+      }
+    }catch(err){
+      alert('Could not read that file: '+err.message);
+    }
   };
-  reader.readAsText(file);
+  if(isExcel) reader.readAsBinaryString(file); else reader.readAsText(file);
+  e.target.value = '';
 }
 
 /* --- Teachers --- */
@@ -1351,8 +2135,10 @@ function renderAdminAttendance(){
     + '<div class="field"><label>Subject</label><select id="att-subject"><option value="all">All subjects</option>' + DB.subjects.map(su=>'<option value="'+su.id+'" '+(f.subjectId===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Teacher</label><select id="att-teacher"><option value="all">All teachers</option>' + DB.teachers.map(t=>'<option value="'+t.id+'" '+(f.teacherId===t.id?'selected':'')+'>'+t.name+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Month</label><select id="att-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(f.month===m.prefix?'selected':'')+'>'+m.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field"><label>From</label><input type="date" id="att-from" value="'+(f.from||'')+'"/></div><div class="field"><label>To</label><input type="date" id="att-to" value="'+(f.to||'')+'"/></div>'
+    + '<div class="field"><label>Status</label><select id="att-status"><option value="">All</option><option value="P" '+(f.status==='P'?'selected':'')+'>Present</option><option value="A" '+(f.status==='A'?'selected':'')+'>Absent</option></select></div>'
     + '<div class="field"><label>Student</label><input id="att-search" placeholder="Search by name or reg. no." value="'+f.q+'"/></div>'
-    + '</div><div class="btn-row"><button class="btn btn-ghost btn-sm" id="att-export">Export filtered (CSV)</button><button class="btn btn-ghost btn-sm" id="att-print">Print report</button></div></div>'
+    + '</div><div class="btn-row"><button class="btn btn-ghost btn-sm" id="att-export">Export filtered (CSV)</button><button class="btn btn-ghost btn-sm" id="att-xlsx">Export filtered (Excel)</button><button class="btn btn-ghost btn-sm" id="att-print">Print report</button></div></div>'
     + '<div id="att-results"></div>';
 
   $('#admin-content').innerHTML = html;
@@ -1362,6 +2148,10 @@ function renderAdminAttendance(){
   $('#att-month').addEventListener('change', e=>{ f.month=e.target.value; renderAdminAttResults(); });
   $('#att-search').addEventListener('input', e=>{ f.q=e.target.value; renderAdminAttResults(); });
   $('#att-export').addEventListener('click', exportAdminAttendance);
+  $('#att-from').addEventListener('change', e=>{ f.from=e.target.value; renderAdminAttResults(); });
+  $('#att-to').addEventListener('change', e=>{ f.to=e.target.value; renderAdminAttResults(); });
+  $('#att-status').addEventListener('change', e=>{ f.status=e.target.value; renderAdminAttResults(); });
+  $('#att-xlsx').addEventListener('click', ()=>{ const rows = filteredAdminAttendance().map(r=>{ const s=DB.students.find(x=>x.id===r.studentId), su=DB.subjects.find(x=>x.id===r.subjectId), t=DB.teachers.find(x=>x.id===r.teacherId); return {Date:r.date, Period:r.period, 'Reg No':s?s.regNo:'', Student:s?s.name:'', Subject:su?su.name:'', Teacher:t?t.name:'', Status:r.status==='P'?'Present':'Absent'}; }); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Attendance'); XLSX.writeFile(wb, 'Attendance_Report.xlsx'); });
   $('#att-print').addEventListener('click', printAdminAttendance);
 
   renderAdminAttResults();
@@ -1377,6 +2167,9 @@ function filteredAdminAttendance(){
   if(f.subjectId!=='all') recs = recs.filter(a=>a.subjectId===f.subjectId);
   if(f.teacherId!=='all') recs = recs.filter(a=>a.teacherId===f.teacherId);
   if(f.month!=='all') recs = recs.filter(a=>a.date.startsWith(f.month));
+  if(f.from) recs = recs.filter(a=>a.date>=f.from);
+  if(f.to) recs = recs.filter(a=>a.date<=f.to);
+  if(f.status) recs = recs.filter(a=>a.status===f.status);
   if(f.q){
     const q = f.q.toLowerCase();
     recs = recs.filter(a=>{ const s=DB.students.find(st=>st.id===a.studentId); return s && (s.name.toLowerCase().includes(q) || s.regNo.toLowerCase().includes(q)); });
@@ -1503,33 +2296,45 @@ function renderAdminCalendar(){
 }
 
 /* --- Analytics --- */
+function stuPct(id){ const r = DB.attendance.filter(a=>a.studentId===id); return r.length ? Math.round(100*r.filter(a=>a.status==='P').length/r.length) : 0; }
+function cv(id,h){ return '<div style="position:relative;height:'+h+'px"><canvas id="'+id+'"></canvas></div>'; }
 function renderAdminAnalytics(){
-  const overall = overallStatsAll();
-  const monthly = monthsData.map(m=>{
-    const recs = DB.attendance.filter(a=>a.date.startsWith(m.prefix));
-    const held = recs.length;
-    const present = recs.filter(r=>r.status==='P').length;
-    return {name:m.name, pct: held ? Math.round((present/held)*100) : 0};
-  });
-
-  let html = '<div class="page-head"><div><h1>Analytics</h1><div class="sub">Institution-wide attendance trends</div></div></div>';
-  html += '<div class="grid-2">'
-    + '<div class="card"><h3>Overall attendance</h3>' + donutHtml(overall.pct, 'Present · '+overall.present, 'Absent · '+(overall.held-overall.present)) + '</div>'
-    + '<div class="card"><h3>Monthly attendance trend</h3>' + trendHtml(monthly) + '</div>'
-    + '</div>';
-  html += '<div class="grid-2">'
-    + '<div class="card"><h3>Subject performance</h3>' + barListHtml(DB.subjects.map(su=>({label:su.name, pct:subjectOverallStats(su.id).pct}))) + '</div>'
-    + '<div class="card"><h3>Class comparison</h3>' + barListHtml(DB.classes.map(c=>({label:c.course+' S'+c.semester+'-'+c.section, pct:classOverallStats(c.id).pct}))) + '</div>'
-    + '</div>';
+  const o = overallStatsAll(), dates = Array.from(new Set(DB.attendance.map(a=>a.date))).sort().slice(-30);
+  const pctOn = d=>{ const r = DB.attendance.filter(a=>a.date===d); return r.length ? Math.round(100*r.filter(a=>a.status==='P').length/r.length) : 0; };
+  const heat = {}; DB.attendance.forEach(a=>{ const k = JS_DAY_TO_NAME[new Date(a.date+'T00:00:00').getDay()]+'_'+a.period; const h = heat[k] = heat[k] || [0,0]; h[1]++; if(a.status==='P') h[0]++; });
+  const hm = '<table class="hm-table"><tr><th></th>'+PERIODS.map(p=>'<th>P'+p+'</th>').join('')+'</tr>'+WEEKDAYS.map(w=>'<tr><th>'+w+'</th>'+PERIODS.map(p=>{ const h = heat[w+'_'+p]; if(!h) return '<td class="hm" style="background:#f1eee6">–</td>'; const v = Math.round(100*h[0]/h[1]); return '<td class="hm" style="background:hsl('+(v*1.2)+',55%,'+(92-v*0.35)+'%)">'+v+'%</td>'; }).join('')+'</tr>').join('')+'</table>';
+  const risk = DB.students.map(s=>({s, p:stuPct(s.id)})).sort((a,b)=>a.p-b.p).slice(0,6);
+  let html = '<div class="page-head"><div><h1>Analytics</h1><div class="sub">Live attendance insights</div></div></div>'
+    + '<div class="grid-2"><div class="card"><h3>Present vs absent</h3>'+cv('ch-donut',260)+'</div><div class="card"><h3>Daily attendance % (last 30 days)</h3>'+cv('ch-line',260)+'</div></div>'
+    + '<div class="grid-2"><div class="card"><h3>Subjects: present vs absent</h3>'+cv('ch-sub',280)+'</div><div class="card"><h3>Class comparison (%)</h3>'+cv('ch-cls',280)+'</div></div>'
+    + '<div class="grid-2"><div class="card"><h3>Heatmap: weekday × period</h3>'+hm+'</div><div class="card"><h3>Needs attention (lowest attendance)</h3>'
+    + risk.map(x=>'<div class="risk-row"><span>'+escapeHtml(x.s.name)+'</span><span class="badge badge-'+statusFor(x.p).cls+'">'+x.p+'%</span></div>').join('')+'</div></div>';
   $('#admin-content').innerHTML = html;
+  if(!window.Chart){ $('#admin-content').insertAdjacentHTML('beforeend','<p class="empty">Charts need an internet connection to load.</p>'); return; }
+  const C = ['#7A1E2C','#B9862E','#2F6F4E','#4A6FA5','#8a5a9e','#3b8f9c','#A33636'];
+  new Chart($('#ch-donut'), {type:'doughnut', data:{labels:['Present','Absent'], datasets:[{data:[o.present, o.held-o.present], backgroundColor:['#2F6F4E','#A33636'], borderWidth:0}]}, options:{maintainAspectRatio:false, cutout:'68%'}});
+  new Chart($('#ch-line'), {type:'line', data:{labels:dates.map(d=>d.slice(5)), datasets:[{label:'Attendance %', data:dates.map(pctOn), borderColor:'#7A1E2C', backgroundColor:'rgba(122,30,44,.16)', fill:true, tension:.35}]}, options:{maintainAspectRatio:false, scales:{y:{min:0,max:100}}}});
+  const sc = su=>{ const r = DB.attendance.filter(a=>a.subjectId===su.id), p = r.filter(a=>a.status==='P').length; return [p, r.length-p]; };
+  new Chart($('#ch-sub'), {type:'bar', data:{labels:DB.subjects.map(su=>su.code), datasets:[{label:'Present', data:DB.subjects.map(su=>sc(su)[0]), backgroundColor:'#2F6F4E'},{label:'Absent', data:DB.subjects.map(su=>sc(su)[1]), backgroundColor:'#A33636'}]}, options:{maintainAspectRatio:false, scales:{x:{stacked:true},y:{stacked:true}}}});
+  new Chart($('#ch-cls'), {type:'bar', data:{labels:DB.classes.map(c=>c.course+' S'+c.semester+'-'+c.section), datasets:[{label:'Attendance %', data:DB.classes.map(c=>classOverallStats(c.id).pct), backgroundColor:C}]}, options:{maintainAspectRatio:false, indexAxis:'y', scales:{x:{min:0,max:100}}}});
 }
+
+const _rsd = renderStudentDashboard;
+renderStudentDashboard = function(){
+  _rsd();
+  const st = DB.students.find(x=>x.id===state.studentId); if(!st || !window.Chart) return;
+  const subs = DB.subjects.filter(su=>su.classId===st.classId);
+  const pc = su=>{ const r = DB.attendance.filter(a=>a.studentId===st.id && a.subjectId===su.id); return r.length ? Math.round(100*r.filter(a=>a.status==='P').length/r.length) : 0; };
+  $('#student-content').insertAdjacentHTML('beforeend', '<div class="card"><h3>Subject-wise attendance</h3>'+cv('ch-stu',320)+'</div>');
+  new Chart($('#ch-stu'), {type:'radar', data:{labels:subs.map(su=>su.code), datasets:[{label:'Attendance %', data:subs.map(pc), borderColor:'#7A1E2C', backgroundColor:'rgba(122,30,44,.2)'},{label:'75% target', data:subs.map(()=>75), borderColor:'#B9862E', borderDash:[5,5], pointRadius:0, fill:false}]}, options:{maintainAspectRatio:false, scales:{r:{min:0,max:100}}}});
+};
 
 /* ============================= INIT ============================= */
 document.addEventListener('DOMContentLoaded', initApp);
 
 function initApp(){
-  if(!BACKEND_ON){
-    console.warn('No API_URL configured — running in local-only demo mode (data will not be shared between users/devices).');
+  if(!BACKEND_ON()){
+    console.warn('No Firebase project configured yet — running in local-only demo mode (data will not be shared between users/devices). Sign in as Admin → Settings to connect one.');
     seedDB();
     generateAttendance();
     populateLoginSelects();
@@ -1537,16 +2342,13 @@ function initApp(){
     return;
   }
   apiGetAll().then(res=>{
+    if(!res || !res.ok) throw new Error((res && res.error) || 'Could not load from the database');
     if(res && res.ok && res.data && res.data.students && res.data.students.length){
-      DB.classes = res.data.classes || [];
-      DB.teachers = res.data.teachers || [];
-      DB.subjects = res.data.subjects || [];
-      DB.students = res.data.students || [];
-      DB.attendance = res.data.attendance || [];
+      SYNC_TABLES.forEach(t=>{ DB[t] = res.data[t] || []; });
       populateLoginSelects();
       bindLoginEvents();
     } else {
-      // Sheet is empty (first run) — seed demo data locally, then push it to the sheet once.
+      // Database is empty (first run) — seed demo data locally, then push it up once.
       seedDB();
       generateAttendance();
       syncSeedAll().finally(()=>{
