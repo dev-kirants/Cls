@@ -444,8 +444,26 @@ async function syncBatch(table, ups, dels){
   const c=getSupabaseCfg();
   const w=(ups||[]).map(r=>fsWrite(c,table,r)).concat((dels||[]).map(id=>({delete:fsRoot(c)+'/'+table+'/'+id})));
   if(!w.length) return true;
-  try{ for(let i=0;i<w.length;i+=400){ await fsPost(c,':commit',{writes:w.slice(i,i+400).concat([revWrite(c,table)])}); } return true; }
-  catch(err){ console.error('[sync] failed',table,err); return false; }
+  try{
+    const chunks=[]; for(let i=0;i<w.length;i+=400) chunks.push(w.slice(i,i+400));
+    await Promise.all(chunks.map(ch=>fsPost(c,':commit',{writes:ch})));   // data goes first, chunks in parallel
+  }catch(err){
+    console.error('[sync] failed',table,err);
+    syncNotice('Could not save to the database ('+err.message+'). '+(/40[13]/.test(err.message)?'Firestore rules are blocking the write - publish the updated rules from Admin > Settings.':'Check the internet connection and try again.'), true);
+    return false;
+  }
+  try{ await fsPost(c,':commit',{writes:[revWrite(c,table)]}); }      // tells other devices something changed
+  catch(err){ console.error('[sync] rev failed',err); syncNotice('Saved, but other devices will not update live. Add "meta" to the Firestore rules (Admin > Settings).', true); }
+  return true;
+}
+let _noticeT;
+function syncNotice(msg, bad){
+  let el=document.getElementById('sync-notice');
+  if(!el){ el=document.createElement('div'); el.id='sync-notice'; el.setAttribute('role','status');
+    el.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:90vw;padding:10px 16px;border-radius:4px;font-size:.85rem;z-index:100;box-shadow:0 2px 10px rgba(0,0,0,.25);color:#fff;';
+    document.body.appendChild(el); }
+  el.style.background = bad ? '#A33636' : '#2F6F4E'; el.textContent = msg; el.style.display = 'block';
+  clearTimeout(_noticeT); _noticeT = setTimeout(()=>{ el.style.display='none'; }, bad ? 12000 : 2500);
 }
 function syncUpsert(t,r){ return r ? syncBatch(t,[r],[]) : Promise.resolve(); }
 function syncBulkUpsert(t,rs){ return (rs&&rs.length) ? syncBatch(t,rs,[]) : Promise.resolve(); }
@@ -456,7 +474,8 @@ async function fetchTable(c,t){
 }
 async function getRev(){
   const c=getSupabaseCfg();
-  try{ const r=await fetch('https://firestore.googleapis.com/v1/'+fsRoot(c)+'/meta/rev?key='+encodeURIComponent(c.key)); if(!r.ok) return {};
+  try{ const r=await fetch('https://firestore.googleapis.com/v1/'+fsRoot(c)+'/meta/rev?key='+encodeURIComponent(c.key));
+    if(!r.ok){ if(r.status===404) return {}; if(!window._revWarned){ window._revWarned=true; syncNotice('Live updates are off (HTTP '+r.status+'). Add "meta" to the Firestore rules (Admin > Settings).', true); } return null; }
     const f=(await r.json()).fields||{}; const o={}; Object.keys(f).forEach(k=>{ o[k]=Number(f[k].integerValue); }); return o; }catch(e){ return null; }
 }
 function rerenderView(){
@@ -1250,7 +1269,7 @@ function renderTeacherMark(teacher){
       Object.keys(state.markDraft).forEach(k=>state.markDraft[k]='P');
       renderTeacherMark(teacher);
     });
-    $('#save-attendance-btn').addEventListener('click', ()=>{
+    $('#save-attendance-btn').addEventListener('click', async ()=>{
       const date = state.markDate || todayStr();
       const period = state.markPeriod || 1;
       const touched = [];
@@ -1259,8 +1278,13 @@ function renderTeacherMark(teacher){
         if(existing){ existing.status = status; touched.push(existing); }
         else{ const rec = {id:uid('A'), studentId, subjectId:state.markSubject, teacherId:teacher.id, date, period, status}; DB.attendance.push(rec); touched.push(rec); }
       });
-      syncBulkUpsert('attendance', touched);
-      $('#save-confirm').textContent = 'Saved '+Object.keys(state.markDraft).length+' records for '+date+'.';
+      const n = Object.keys(state.markDraft).length;
+      if(!BACKEND_ON()){ $('#save-confirm').textContent = 'Saved on this device only ('+n+' records) - not connected to the database.'; return; }
+      $('#save-attendance-btn').disabled = true; $('#save-confirm').textContent = 'Saving '+n+' records...';
+      const ok = await syncBulkUpsert('attendance', touched);
+      const m2 = $('#save-confirm'), b2 = $('#save-attendance-btn');
+      if(b2) b2.disabled = false;
+      if(m2) m2.textContent = ok===false ? 'NOT saved to the database - see the red message and press Save again.' : 'Saved '+n+' records for '+date+'. Students and faculty see it within a few seconds.';
     });
 
     $('#session-topics').addEventListener('input', e=>{ state.sessionDraft.topics = e.target.value; });
@@ -1649,7 +1673,7 @@ function handleOldWorkbook(e){
 }
 
 /* --- Settings (Firebase link + backup/restore) --- */
-const SETUP_SCRIPT = "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{collection}/{docId} {\n      allow read, write: if collection in ['classes','teachers','subjects','students','attendance','timetable','holidays','sessions','settings'];\n    }\n  }\n}\n";
+const SETUP_SCRIPT = "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{collection}/{docId} {\n      allow read, write: if collection in ['classes','teachers','subjects','students','attendance','timetable','holidays','sessions','settings','meta'];\n    }\n  }\n}\n";
 
 function renderAdminSettings(){
   const cfg = getSupabaseCfg();
@@ -2323,7 +2347,7 @@ document.addEventListener('DOMContentLoaded', initApp);
 function initApp(){
   const ready = ()=>{ populateLoginSelects(); bindLoginEvents(); };
   if(!BACKEND_ON()){ ready(); return; }          // no database configured: start empty
-  getRev().then(r=>{ REV_SEEN=r||{}; }); setInterval(pollRev,5000);
+  getRev().then(r=>{ REV_SEEN=r||{}; }); setInterval(pollRev,5000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRev(); });
   apiGetAll().then(res=>{
     if(res && res.ok) SYNC_TABLES.forEach(t=>{ DB[t] = res.data[t] || []; });
   }).catch(err=>console.error(err)).finally(ready);
