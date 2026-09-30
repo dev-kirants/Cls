@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://firestore.googleapis.com; object-src 'none'; base-uri 'none'; form-action 'none'"/>
+<meta name="referrer" content="no-referrer"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Attendance Ledger — Student Attendance Management System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -329,7 +331,34 @@
 const DB = { classes:[], teachers:[], subjects:[], students:[], attendance:[], timetable:[], holidays:[], sessions:[], settings:[] };
 const SYNC_TABLES = ['classes','teachers','subjects','students','attendance','timetable','holidays','sessions','settings'];
 
-const ADMIN_CREDENTIALS = { username:'Admin', password:'9620662455' };
+/* ---------- SECURITY ---------- */
+const ADMIN_CRED = { u:'Admin', h:'e15734e68ef984d24e5ee2985dae9ac401b054429cf3345e6a5a53642fa330a3' };   // PBKDF2 hash only — no plain password in code
+(function(){
+  const noop=function(){}; ['log','info','debug','warn'].forEach(k=>{ console[k]=noop; });
+  document.addEventListener('contextmenu',e=>e.preventDefault());
+  document.addEventListener('keydown',e=>{
+    const k=(e.key||'').toLowerCase();
+    if(e.key==='F12'||(e.ctrlKey&&e.shiftKey&&['i','j','c'].includes(k))||(e.ctrlKey&&['u','s'].includes(k))||(e.metaKey&&e.altKey&&['i','j','u'].includes(k))) e.preventDefault();
+  });
+  setInterval(()=>{ if(innerWidth>900&&(outerWidth-innerWidth>250||outerHeight-innerHeight>250)){
+    document.body.innerHTML='<h2 style="font-family:sans-serif;padding:40px">Developer tools are not allowed. Close them and refresh.</h2>'; } },1000);
+})();
+async function hashPw(pw,salt){
+  const k=await crypto.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveBits']);
+  const b=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:new TextEncoder().encode('atl$'+salt),iterations:100000},k,256);
+  return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,'0')).join('');
+}
+function lockLeft(){ try{ const l=JSON.parse(localStorage.getItem('atl_lk')||'{}'); return Math.max(0,(l.until||0)-Date.now()); }catch(e){ return 0; } }
+function failLogin(){ let l={}; try{ l=JSON.parse(localStorage.getItem('atl_lk')||'{}'); }catch(e){} l.n=(l.n||0)+1; if(l.n>=5) l.until=Date.now()+300000*Math.min(l.n-4,6); localStorage.setItem('atl_lk',JSON.stringify(l)); }
+function okLogin(){ localStorage.removeItem('atl_lk'); }
+let LAST_ACT=Date.now();
+['click','keydown','mousemove','touchstart'].forEach(ev=>document.addEventListener(ev,()=>{ LAST_ACT=Date.now(); },{passive:true}));
+setInterval(()=>{ if(state.role && Date.now()-LAST_ACT>20*60000){ logout(); alert('Signed out after 20 minutes of inactivity.'); } },30000);
+async function migrateTeacherPasswords(){
+  const ch=[]; for(const t of DB.teachers){ if(t.password){ t.passHash=await hashPw(t.password,t.id); t.password=''; ch.push(t); } }
+  if(ch.length) syncBulkUpsert('teachers',ch);
+}
+
 
 /* ============================= FIREBASE (FIRESTORE) BACKEND ============================= */
 /* Data lives in Firebase Firestore (one collection per table, one document per record).
@@ -408,30 +437,50 @@ async function apiGetAll(){
     return {ok:true, data};
   }catch(err){ console.error('[sync] load failed', err); return {ok:false, error:err.message}; }
 }
-function syncUpsert(table, row){
-  if(!BACKEND_ON() || !row) return Promise.resolve();
-  const c = getSupabaseCfg();
-  return fsPost(c, ':commit', {writes:[fsWrite(c, table, row)]})
-    .catch(err=>console.error('[sync] upsert failed', table, err));
+const LAST_REV={}; let REV_SEEN=null, POLL_BUSY=false, PENDING=false;
+function revWrite(c, table){ const ts=Date.now(); LAST_REV[table]=ts; return {update:{name:fsRoot(c)+'/meta/rev', fields:{[table]:{integerValue:String(ts)}}}, updateMask:{fieldPaths:[table]}}; }
+async function syncBatch(table, ups, dels){
+  if(!BACKEND_ON()) return true;
+  const c=getSupabaseCfg();
+  const w=(ups||[]).map(r=>fsWrite(c,table,r)).concat((dels||[]).map(id=>({delete:fsRoot(c)+'/'+table+'/'+id})));
+  if(!w.length) return true;
+  try{ for(let i=0;i<w.length;i+=400){ await fsPost(c,':commit',{writes:w.slice(i,i+400).concat([revWrite(c,table)])}); } return true; }
+  catch(err){ console.error('[sync] failed',table,err); return false; }
 }
-async function syncBulkUpsert(table, rows){
-  if(!BACKEND_ON() || !rows || !rows.length) return;
-  const c = getSupabaseCfg();
+function syncUpsert(t,r){ return r ? syncBatch(t,[r],[]) : Promise.resolve(); }
+function syncBulkUpsert(t,rs){ return (rs&&rs.length) ? syncBatch(t,rs,[]) : Promise.resolve(); }
+function syncDelete(t,id){ return syncBatch(t,[],[id]); }
+async function fetchTable(c,t){
+  const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:t}]}});
+  return items.filter(i=>i.document).map(i=>{ const o={}; const f=i.document.fields||{}; Object.keys(f).forEach(k=>{ o[k]=fsDec(k,f[k]); }); if(o.id===undefined) o.id=i.document.name.split('/').pop(); return o; });
+}
+async function getRev(){
+  const c=getSupabaseCfg();
+  try{ const r=await fetch('https://firestore.googleapis.com/v1/'+fsRoot(c)+'/meta/rev?key='+encodeURIComponent(c.key)); if(!r.ok) return {};
+    const f=(await r.json()).fields||{}; const o={}; Object.keys(f).forEach(k=>{ o[k]=Number(f[k].integerValue); }); return o; }catch(e){ return null; }
+}
+function rerenderView(){
+  const y=scrollY; try{ enterApp(); }catch(e){ logout(); return; } scrollTo(0,y);
+}
+function liveRefresh(){
+  const ae=document.activeElement;
+  const editing=ae&&/^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)&&!ae.closest('#topbar');
+  if(editing||ttDirty()||(state.role==='teacher'&&state.teacherTab==='mark')){ PENDING=true; return; }
+  PENDING=false; rerenderView();
+}
+async function pollRev(){
+  if(!BACKEND_ON()||document.hidden||POLL_BUSY||!state.role) return;
+  if(PENDING) liveRefresh();
+  POLL_BUSY=true;
   try{
-    for(let i=0; i<rows.length; i+=400){
-      await fsPost(c, ':commit', {writes: rows.slice(i,i+400).map(r=>fsWrite(c, table, r))});
-    }
-  }catch(err){ console.error('[sync] bulkUpsert failed', table, err); }
-}
-function syncDelete(table, id){
-  if(!BACKEND_ON()) return Promise.resolve();
-  const c = getSupabaseCfg();
-  return fsPost(c, ':commit', {writes:[{delete: fsRoot(c)+'/'+table+'/'+id}]})
-    .catch(err=>console.error('[sync] delete failed', table, err));
-}
-async function syncSeedAll(){
-  if(!BACKEND_ON()) return;
-  for(const t of SYNC_TABLES){ await syncBulkUpsert(t, DB[t]); }
+    const rev=await getRev(); if(!rev) return;
+    const old=REV_SEEN||{}; const changed=Object.keys(rev).filter(k=>SYNC_TABLES.includes(k)&&rev[k]!==old[k]&&rev[k]!==LAST_REV[k]);
+    REV_SEEN=rev; if(!changed.length) return;
+    const c=getSupabaseCfg();
+    const res=await Promise.all(changed.map(t=>fetchTable(c,t)));
+    changed.forEach((t,i)=>{ DB[t]=res[i]; });
+    liveRefresh();
+  }catch(e){ console.error(e); } finally{ POLL_BUSY=false; }
 }
 async function testSupabaseConnection(url, key){
   try{
@@ -442,13 +491,17 @@ async function testSupabaseConnection(url, key){
   }
 }
 
-const monthsData = [
-  {name:'June', prefix:'2026-06', dates:['2026-06-02','2026-06-03','2026-06-04','2026-06-05','2026-06-08','2026-06-09','2026-06-10','2026-06-11','2026-06-12','2026-06-15']},
-  {name:'July', prefix:'2026-07', dates:['2026-07-01','2026-07-02','2026-07-03','2026-07-06','2026-07-07','2026-07-08','2026-07-09','2026-07-10','2026-07-13','2026-07-14']},
-  {name:'August', prefix:'2026-08', dates:['2026-08-03','2026-08-04','2026-08-05','2026-08-06','2026-08-07','2026-08-10','2026-08-11','2026-08-12','2026-08-13','2026-08-14']},
-  {name:'September', prefix:'2026-09', dates:['2026-09-01','2026-09-02','2026-09-03','2026-09-04','2026-09-07','2026-09-08']}
-];
-
+const monthsData = [];   // built from real attendance dates + the current month
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function rebuildMonths(){
+  const map = {};
+  const add = (prefix)=>{ if(!map[prefix]) map[prefix] = {name:MONTH_NAMES[Number(prefix.slice(5,7))-1], prefix, dates:[]}; return map[prefix]; };
+  add(todayStr().slice(0,7));
+  const seen = new Set();
+  DB.attendance.forEach(a=>{ if(!a.date) return; const m = add(a.date.slice(0,7)); const k = a.date; if(!seen.has(k)){ seen.add(k); m.dates.push(k); } });
+  monthsData.length = 0;
+  Object.keys(map).sort().forEach(p=>{ map[p].dates.sort(); monthsData.push(map[p]); });
+}
 const WEEKDAYS = ['Mon','Tue','Wed','Thu','Fri','Sat'];
 const JS_DAY_TO_NAME = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const PERIODS = [1,2,3,4,5,6];
@@ -458,109 +511,6 @@ const PERIOD_TIMES = {
 };
 function todayStr(){ return new Date().toLocaleDateString('en-CA'); }
 function todayDayName(){ return JS_DAY_TO_NAME[new Date().getDay()]; }
-
-const subjectMonthRates = {
-  SU1:{June:0.84, July:0.87, August:0.90, September:0.93},
-  SU2:{June:0.83, July:0.86, August:0.89, September:0.90},
-  SU3:{June:0.72, July:0.76, August:0.80, September:0.82},
-  SU4:{June:0.83, July:0.85, August:0.88, September:0.90},
-  SU5:{June:0.85, July:0.87, August:0.88, September:0.90},
-  SU6:{June:0.88, July:0.90, August:0.91, September:0.93}
-};
-
-function mkStudent(id, regNo, name, dob, gender, classId){
-  const cls = DB.classes.find(c=>c.id===classId);
-  return {
-    id, regNo, name, dob, gender,
-    course:cls.course, dept:'Commerce', semester:cls.semester, section:cls.section,
-    email:regNo.toLowerCase()+'@college.edu',
-    phone:'98'+Math.floor(10000000+Math.random()*89999999),
-    admissionYear:'20'+regNo.slice(0,2),
-    status:'Active', classId
-  };
-}
-
-function seedDB(){
-  DB.classes = [
-    {id:'CL1', course:'M.Com', semester:1, section:'A', year:'2025-26'},
-    {id:'CL2', course:'M.Com', semester:2, section:'A', year:'2025-26'},
-    {id:'CL3', course:'M.Com', semester:2, section:'B', year:'2025-26'}
-  ];
-  DB.teachers = [
-    {id:'TC1', teacherId:'TCH001', name:'Rahul Sharma', password:'teach123', status:'Active'},
-    {id:'TC2', teacherId:'TCH002', name:'Priya Nair', password:'teach123', status:'Active'}
-  ];
-  DB.subjects = [
-    {id:'SU1', code:'MCOM-FM01', name:'Financial Management', semester:2, teacherId:'TC1', classId:'CL2'},
-    {id:'SU2', code:'MCOM-CA02', name:'Cost Accounting', semester:2, teacherId:'TC1', classId:'CL2'},
-    {id:'SU3', code:'MCOM-BS03', name:'Business Statistics', semester:2, teacherId:'TC2', classId:'CL2'},
-    {id:'SU4', code:'MCOM-EC04', name:'Economics', semester:2, teacherId:'TC2', classId:'CL2'},
-    {id:'SU5', code:'MCOM-FM01A', name:'Financial Management', semester:1, teacherId:'TC1', classId:'CL1'},
-    {id:'SU6', code:'MCOM-FM01C', name:'Financial Management', semester:2, teacherId:'TC1', classId:'CL3'}
-  ];
-  DB.students = [
-    mkStudent('ST1','24MCOM001','Aditi Rao','2004-03-12','Female','CL2'),
-    mkStudent('ST2','24MCOM002','Bharath Kumar','2003-11-02','Male','CL2'),
-    mkStudent('ST3','24MCOM003','Chitra Menon','2004-01-22','Female','CL2'),
-    mkStudent('ST4','24MCOM004','Dev Patel','2003-07-19','Male','CL2'),
-    mkStudent('ST5','24MCOM005','Esha Iyer','2004-05-30','Female','CL2'),
-    mkStudent('ST6','24MCOM006','Farhan Ali','2003-09-14','Male','CL2'),
-    mkStudent('ST7','24MCOM007','Gayatri Nair','2004-02-08','Female','CL2'),
-    mkStudent('ST8','24MCOM008','Harish Reddy','2003-12-25','Male','CL2'),
-    mkStudent('ST9','25MCOM101','Ishaan Verma','2005-04-17','Male','CL1'),
-    mkStudent('ST10','24MCOM201','Jyoti Singh','2004-06-09','Female','CL3')
-  ];
-  DB.attendance = [];
-
-  // Default weekly timetable — a simple, editable starting point per class.
-  DB.timetable = [];
-  const ttPlan = {
-    CL1:['SU5','SU5','','SU5','','SU5'],
-    CL2:['SU1','SU2','SU3','SU4','SU1','SU2'],
-    CL3:['SU6','','SU6','','SU6','']
-  };
-  DB.classes.forEach(cls=>{
-    const rowSubjects = [ttPlan[cls.id]||[], ttPlan[cls.id]||[]];
-    WEEKDAYS.forEach((day, di)=>{
-      PERIODS.forEach((period, pi)=>{
-        const list = ttPlan[cls.id] || [];
-        const subjectId = list[(di+pi) % Math.max(list.length,1)] || '';
-        if(subjectId){
-          DB.timetable.push({id:'TT_'+cls.id+'_'+day+'_'+period, classId:cls.id, day, period, subjectId});
-        }
-      });
-    });
-  });
-
-  DB.holidays = [
-    {id:'HOL1', date:'2026-08-15', name:'Independence Day', type:'Holiday'},
-    {id:'HOL2', date:'2026-08-27', name:'Ganesh Chaturthi', type:'Holiday'},
-    {id:'HOL3', date:'2026-10-02', name:'Gandhi Jayanti', type:'Holiday'},
-    {id:'HOL4', date:'2026-09-05', name:'Teachers\' Day', type:'Event'}
-  ];
-
-  DB.sessions = [];
-}
-
-function generateAttendance(){
-  let n = 1;
-  DB.subjects.forEach((subject, sIdx)=>{
-    const rates = subjectMonthRates[subject.id];
-    const students = DB.students.filter(s=>s.classId===subject.classId);
-    if(!rates || !students.length) return;
-    monthsData.forEach(month=>{
-      const base = rates[month.name];
-      month.dates.forEach((date, dIdx)=>{
-        students.forEach((stu, stuIdx)=>{
-          const offset = (((stuIdx*7 + sIdx*13 + dIdx*3) % 11) - 5) / 100;
-          const eff = Math.min(0.99, Math.max(0.5, base + offset));
-          const status = Math.random() < eff ? 'P' : 'A';
-          DB.attendance.push({id:'A'+(n++), studentId:stu.id, subjectId:subject.id, teacherId:subject.teacherId, date, period:(dIdx%4)+1, status});
-        });
-      });
-    });
-  });
-}
 
 /* ============================= HELPERS ============================= */
 function $(sel, ctx){ return (ctx||document).querySelector(sel); }
@@ -816,7 +766,7 @@ const state = {
   studentCalMonth:null, studentCalDate:null,
   teacherCalMonth:null, teacherCalSubject:'all', teacherCalDate:null,
   adminCalMonth:null, adminCalClass:'all', adminCalDate:null,
-  adminTimetableClass:null, holidayForm:null,
+  adminTimetableClass:null, holidayForm:null, ttDraft:{}, ttSaved:null, ttF:{classId:'all',day:'all',mine:false}, tF:{q:'',status:'all',classId:'all'},
   sessionDraft:{topics:'', files:[]}
 };
 
@@ -849,8 +799,9 @@ function bindLoginEvents(){
   $('#logout-btn').addEventListener('click', logout);
 }
 
-function login(role){
+async function login(role){
   showLoginError(role, '');
+  if(lockLeft()){ showLoginError(role,'Too many attempts. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
 
   if(role==='student'){
     const reg = $('#student-reg').value.trim();
@@ -858,7 +809,7 @@ function login(role){
     if(!reg || !dob){ showLoginError('student', 'Enter your register number and phone number.'); return; }
     const student = DB.students.find(s=>s.regNo.toLowerCase()===reg.toLowerCase());
     const dg = v=>String(v||'').replace(/\D/g,'');
-    if(!student || !dg(student.phone) || dg(student.phone) !== dg(dob)){ showLoginError('student', 'Register number or phone number is incorrect.'); return; }
+    if(!student || !dg(student.phone) || dg(student.phone) !== dg(dob)){ failLogin(); showLoginError('student', 'Register number or phone number is incorrect.'); return; }
     state.role = 'student';
     state.studentId = student.id;
     $('#student-reg').value=''; $('#student-pass').value='';
@@ -868,7 +819,12 @@ function login(role){
     const pass = $('#teacher-pass').value;
     if(!tid || !pass){ showLoginError('teacher', 'Enter your teacher ID and password.'); return; }
     const teacher = DB.teachers.find(t=>t.teacherId.toLowerCase()===tid.toLowerCase());
-    if(!teacher || teacher.password !== pass){ showLoginError('teacher', 'Teacher ID or password is incorrect.'); return; }
+    let ok=false;
+    if(teacher){
+      if(teacher.passHash) ok=(await hashPw(pass,teacher.id))===teacher.passHash;
+      else if(teacher.password && teacher.password===pass){ ok=true; teacher.passHash=await hashPw(pass,teacher.id); teacher.password=''; syncUpsert('teachers',teacher); }
+    }
+    if(!ok){ failLogin(); showLoginError('teacher', 'Teacher ID or password is incorrect.'); return; }
     state.role = 'teacher';
     state.teacherId = teacher.id;
     state.teacherTab = 'dashboard';
@@ -877,10 +833,9 @@ function login(role){
   else if(role==='admin'){
     const user = $('#admin-user').value.trim();
     const pass = $('#admin-pass').value;
-    if(user !== ADMIN_CREDENTIALS.username || pass !== ADMIN_CREDENTIALS.password){
-      showLoginError('admin', 'Username or password is incorrect.');
-      return;
-    }
+    const h=await hashPw(pass,'admin');
+    if(user !== ADMIN_CRED.u || h !== ADMIN_CRED.h){ failLogin(); showLoginError('admin', 'Username or password is incorrect.'); return; }
+    okLogin(); migrateTeacherPasswords();
     state.role = 'admin';
     state.adminTab = 'overview';
     $('#admin-user').value=''; $('#admin-pass').value='';
@@ -889,7 +844,9 @@ function login(role){
   enterApp();
 }
 
-function logout(){
+function logout(ev){
+  if(ev&&ev.type==='click'&&ttDirty()&&!confirm('You have unsaved timetable changes. Sign out and discard them?')) return;
+  state.ttDraft={};
   state.role = null;
   $('#topbar').style.display='none';
   $all('.view').forEach(v=>v.classList.remove('active'));
@@ -929,6 +886,7 @@ function renderStudentSidebar(){
 }
 
 function renderStudentContent(){
+  rebuildMonths();
   if(state.studentTab==='calendar') return renderStudentCalendar();
   if(state.studentTab==='timetable') return renderStudentTimetable();
   if(state.studentTab==='content') return renderStudentContentTab();
@@ -981,14 +939,16 @@ function renderHolidayListView(role){
 
 /* Renders a Mon–Sat × period timetable grid for a class.
    onCellClick(day, period, entry) — if provided, cells become clickable (used by admin editor via renderAdminTimetable itself). */
-function timetableGridHtml(classId, highlightTeacherId){
-  let rows = '<tr><th>Period</th>' + WEEKDAYS.map(d=>'<th>'+d+'</th>').join('') + '</tr>';
+function timetableGridHtml(classId, highlightTeacherId, opts){
+  opts=opts||{}; const DAYS=(opts.day&&opts.day!=='all')?[opts.day]:WEEKDAYS;
+  let rows = '<tr><th>Period</th>' + DAYS.map(d=>'<th>'+d+'</th>').join('') + '</tr>';
   PERIODS.forEach(period=>{
     rows += '<tr><td class="tt-period-label">P'+period+'<div class="tt-period-time">'+PERIOD_TIMES[period]+'</div></td>';
-    WEEKDAYS.forEach(day=>{
+    DAYS.forEach(day=>{
       const entry = timetableEntry(classId, day, period);
       const su = entry ? DB.subjects.find(x=>x.id===entry.subjectId) : null;
       const t = su ? DB.teachers.find(x=>x.id===su.teacherId) : null;
+      if(opts.mine&&highlightTeacherId&&!(su&&su.teacherId===highlightTeacherId)){ rows+='<td><div class="tt-empty-cell">—</div></td>'; return; }
       if(su){
         const dim = highlightTeacherId && su.teacherId!==highlightTeacherId;
         rows += '<td><div class="tt-cell-view" style="'+(dim?'opacity:.35;':'')+'"><span class="tt-sub">'+su.name+'</span>'+(t?'<span class="tt-teach">'+t.name+'</span>':'')+'</div></td>';
@@ -1057,7 +1017,7 @@ function renderStudentCalendar(){
 
   let html = '<div class="page-head"><div><h1>Calendar</h1><div class="sub">Day-by-day attendance for '+student.name+'.</div></div></div>';
   html += '<div class="card"><div class="cal-toolbar"><div class="field" style="margin:0;min-width:180px;"><label>Month</label><select id="scal-month">'
-    + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' 2026</option>').join('')
+    + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' '+mo.prefix.slice(0,4)+'</option>').join('')
     + '</select></div></div>'
     + calendarHtml(m, d=>studentDayStats(student.id, d), state.studentCalDate)
     + '</div>';
@@ -1099,6 +1059,7 @@ function renderTeacherSidebar(){
 }
 
 function renderTeacherContent(){
+  rebuildMonths();
   const teacher = DB.teachers.find(t=>t.id===state.teacherId);
   if(state.teacherTab==='dashboard') return renderTeacherDashboard(teacher);
   if(state.teacherTab==='timetable') return renderTeacherTimetable(teacher);
@@ -1167,16 +1128,23 @@ function renderTeacherDashboard(teacher){
 function renderTeacherTimetable(teacher){
   const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
   const classIds = Array.from(new Set(subjects.map(s=>s.classId)));
-  let html = '<div class="page-head"><div><h1>My Timetable</h1><div class="sub">Your classes highlighted across the week; other classes shown faded.</div></div></div>';
-  if(!classIds.length){
-    html += '<div class="card"><p class="empty">No subjects are assigned to you yet.</p></div>';
-  } else {
-    classIds.forEach(cid=>{
-      const cls = DB.classes.find(c=>c.id===cid);
-      html += '<div class="card" style="overflow-x:auto;"><h3>'+(cls?cls.course+' · Semester '+cls.semester+' · Section '+cls.section:cid)+'</h3>' + timetableGridHtml(cid, teacher.id) + '</div>';
-    });
-  }
+  const f = state.ttF; if(f.classId!=='all' && !classIds.includes(f.classId)) f.classId='all';
+  const lbl = c=>c?c.course+' S'+c.semester+'-'+c.section:'';
+  let html = '<div class="page-head"><div><h1>My Timetable</h1><div class="sub">Updates live when the admin publishes changes.</div></div></div>';
+  html += '<div class="card"><div class="form-row">'
+    + '<div class="field"><label>Class / Section</label><select id="ttf-class"><option value="all">All my classes</option>'+classIds.map(id=>'<option value="'+id+'" '+(f.classId===id?'selected':'')+'>'+lbl(DB.classes.find(c=>c.id===id))+'</option>').join('')+'</select></div>'
+    + '<div class="field"><label>Day</label><select id="ttf-day"><option value="all">All days</option>'+WEEKDAYS.map(d=>'<option '+(f.day===d?'selected':'')+'>'+d+'</option>').join('')+'</select></div>'
+    + '<div class="field"><label>Show</label><select id="ttf-mine"><option value="0">All periods</option><option value="1" '+(f.mine?'selected':'')+'>Only my periods</option></select></div></div></div>';
+  const show = f.classId==='all' ? classIds : [f.classId];
+  if(!show.length) html += '<div class="card"><p class="empty">No subjects are assigned to you yet.</p></div>';
+  show.forEach(cid=>{
+    const cls = DB.classes.find(c=>c.id===cid);
+    html += '<div class="card" style="overflow-x:auto;"><h3>'+(cls?cls.course+' · Semester '+cls.semester+' · Section '+cls.section:cid)+'</h3>' + timetableGridHtml(cid, teacher.id, {day:f.day, mine:f.mine}) + '</div>';
+  });
   $('#teacher-content').innerHTML = html;
+  $('#ttf-class').addEventListener('change',e=>{ f.classId=e.target.value; renderTeacherTimetable(teacher); });
+  $('#ttf-day').addEventListener('change',e=>{ f.day=e.target.value; renderTeacherTimetable(teacher); });
+  $('#ttf-mine').addEventListener('change',e=>{ f.mine=e.target.value==='1'; renderTeacherTimetable(teacher); });
 }
 
 function renderTeacherContentTab(teacher){
@@ -1338,7 +1306,7 @@ function renderTeacherCalendar(teacher){
   }
 
   html += '<div class="card"><div class="cal-toolbar">'
-    + '<div class="field" style="margin:0;min-width:180px;"><label>Month</label><select id="tcal-month">' + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field" style="margin:0;min-width:180px;"><label>Month</label><select id="tcal-month">' + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' '+mo.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
     + '<div class="field" style="margin:0;min-width:200px;"><label>Subject</label><select id="tcal-subject"><option value="all">All subjects</option>' + subjects.map(su=>'<option value="'+su.id+'" '+(state.teacherCalSubject===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
     + '</div>'
     + calendarHtml(m, d=>teacherDayStats(teacher, state.teacherCalSubject, d), state.teacherCalDate)
@@ -1374,7 +1342,7 @@ function renderTeacherRecords(teacher){
   let html = '<div class="page-head"><div><h1>Attendance records</h1><div class="sub">Review or correct previously marked attendance.</div></div></div>';
   html += '<div class="card"><div class="form-row">'
     + '<div class="field"><label>Subject</label><select id="rec-subject"><option value="all">All subjects</option>' + subjects.map(su=>'<option value="'+su.id+'" '+(state.recFilters.subject===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
-    + '<div class="field"><label>Month</label><select id="rec-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(state.recFilters.month===m.prefix?'selected':'')+'>'+m.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Month</label><select id="rec-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(state.recFilters.month===m.prefix?'selected':'')+'>'+m.name+' '+m.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Student</label><input id="rec-search" placeholder="Search by name or reg. no." value="'+state.recFilters.q+'"/></div>'
     + '</div></div>'
     + '<div id="rec-results-card" class="card"></div>';
@@ -1422,7 +1390,8 @@ function subjectMonthMatrix(subjectId, monthPrefix){
   const month = monthsData.find(m=>m.prefix===monthPrefix);
   const students = DB.students.filter(s=>s.classId===subject.classId);
   const rows = students.map(s=>{
-    const cells = month.dates.map(d=>{
+    const subjDates = month.dates.filter(d=>DB.attendance.some(a=>a.subjectId===subjectId && a.date===d));
+    const cells = subjDates.map(d=>{
       const rec = DB.attendance.find(a=>a.studentId===s.id && a.subjectId===subjectId && a.date===d);
       return rec ? rec.status : '-';
     });
@@ -1431,7 +1400,7 @@ function subjectMonthMatrix(subjectId, monthPrefix){
     const pct = held ? Math.round((present/held)*1000)/10 : 0;
     return {student:s, cells, held, present, pct};
   });
-  return {subject, month, rows};
+  return {subject, month, rows, dates: month.dates.filter(d=>DB.attendance.some(a=>a.subjectId===subjectId && a.date===d))};
 }
 
 function renderTeacherReports(teacher){
@@ -1449,7 +1418,7 @@ function renderTeacherReports(teacher){
 
   html += '<div class="card"><div class="form-row">'
     + '<div class="field"><label>Subject</label><select id="report-subject">' + subjects.map(su=>'<option value="'+su.id+'" '+(su.id===state.reportSubject?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
-    + '<div class="field"><label>Month</label><select id="report-month">' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(m.prefix===state.reportMonth?'selected':'')+'>'+m.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Month</label><select id="report-month">' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(m.prefix===state.reportMonth?'selected':'')+'>'+m.name+' '+m.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
     + '</div><div class="btn-row"><button class="btn btn-primary" id="export-csv-btn">Download as Excel (CSV)</button><button class="btn btn-ghost" id="print-report-btn">Print / save as PDF</button></div></div>';
 
   $('#teacher-content').innerHTML = html;
@@ -1457,10 +1426,10 @@ function renderTeacherReports(teacher){
   $('#report-subject').addEventListener('change', e=>{ state.reportSubject=e.target.value; renderTeacherReports(teacher); });
   $('#report-month').addEventListener('change', e=>{ state.reportMonth=e.target.value; renderTeacherReports(teacher); });
   $('#export-csv-btn').addEventListener('click', ()=>{
-    const {subject, month, rows} = subjectMonthMatrix(state.reportSubject, state.reportMonth);
-    const header = ['Reg No','Name'].concat(month.dates.map(d=>d.slice(5))).concat(['Present','Held','Percentage']);
+    const {subject, month, rows, dates} = subjectMonthMatrix(state.reportSubject, state.reportMonth);
+    const header = ['Reg No','Name'].concat(dates.map(d=>d.slice(5))).concat(['Present','Held','Percentage']);
     const body = rows.map(r=>[r.student.regNo, r.student.name].concat(r.cells).concat([r.present, r.held, r.pct+'%']));
-    downloadCSV('Attendance_'+subject.code+'_'+month.name+'2026.csv', [header].concat(body));
+    downloadCSV('Attendance_'+subject.code+'_'+month.name+month.prefix.slice(0,4)+'.csv', [header].concat(body));
   });
   $('#print-report-btn').addEventListener('click', ()=>{
     const {subject, month, rows} = subjectMonthMatrix(state.reportSubject, state.reportMonth);
@@ -1469,7 +1438,7 @@ function renderTeacherReports(teacher){
       + '<div style="color:#555;margin-bottom:16px;">'+cls.course+' · Semester '+cls.semester+' · Section '+cls.section+'</div>'
       + '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
       + '<tr><td><strong>Subject:</strong> '+subject.name+' ('+subject.code+')</td><td><strong>Teacher:</strong> '+teacher.name+'</td></tr>'
-      + '<tr><td><strong>Month:</strong> '+month.name+' 2026</td><td><strong>Generated:</strong> '+new Date().toDateString()+'</td></tr>'
+      + '<tr><td><strong>Month:</strong> '+month.name+' '+month.prefix.slice(0,4)+'</td><td><strong>Generated:</strong> '+new Date().toDateString()+'</td></tr>'
       + '</table>'
       + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
       + '<thead><tr style="border-bottom:2px solid #000;"><th style="text-align:left;padding:6px;">Reg no.</th><th style="text-align:left;padding:6px;">Name</th><th style="padding:6px;">Present</th><th style="padding:6px;">Held</th><th style="padding:6px;">%</th></tr></thead>'
@@ -1493,6 +1462,7 @@ function renderAdminSidebar(){
 }
 
 function renderAdminContent(){
+  rebuildMonths();
   const map = {
     overview:renderAdminOverview, students:renderAdminStudents, teachers:renderAdminTeachers,
     subjects:renderAdminSubjects, classes:renderAdminClasses, attendance:renderAdminAttendance,
@@ -1503,70 +1473,69 @@ function renderAdminContent(){
 }
 
 /* --- Timetable --- */
+function ttKey(c,d,p){ return 'TT_'+c+'_'+d+'_'+p; }
+function ttDirty(){ return Object.keys(state.ttDraft).length>0; }
+function ttEffective(c,d,p){ const k=ttKey(c,d,p); return (k in state.ttDraft) ? state.ttDraft[k] : timetableEntry(c,d,p); }
+async function saveTimetable(){
+  const ups=[], dels=[];
+  Object.keys(state.ttDraft).forEach(k=>{ const v=state.ttDraft[k]; if(v===null){ if(DB.timetable.some(t=>t.id===k)) dels.push(k); } else ups.push(v); });
+  const btn=$('#tt-save'); if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  const ok=await syncBatch('timetable',ups,dels);
+  if(!ok){ alert('Could not save — check your connection. Your changes are still here.'); renderAdminTimetable(); return; }
+  const ids=new Set(dels.concat(ups.map(u=>u.id)));
+  DB.timetable=DB.timetable.filter(t=>!ids.has(t.id)).concat(ups);
+  state.ttDraft={}; state.ttSaved=new Date(); renderAdminTimetable();
+}
 function renderAdminTimetable(){
   if(!state.adminTimetableClass || !DB.classes.find(c=>c.id===state.adminTimetableClass)) state.adminTimetableClass = DB.classes[0] ? DB.classes[0].id : null;
-  let html = '<div class="page-head"><div><h1>Timetable</h1><div class="sub">Set the weekly schedule per class. Changes save automatically and sync live.</div></div></div>';
-
-  if(!DB.classes.length){
-    html += '<div class="card"><p class="empty">Add a class first.</p></div>';
-    $('#admin-content').innerHTML = html;
-    return;
-  }
-
-  html += '<div class="card"><div class="field" style="max-width:320px;"><label>Class</label><select id="tt-class">'
+  let html = '<div class="page-head"><div><h1>Timetable</h1><div class="sub">Edit freely, then press <b>Save &amp; publish</b>. Students and faculty see it within seconds.</div></div></div>';
+  if(!DB.classes.length){ html += '<div class="card"><p class="empty">Add a class first.</p></div>'; $('#admin-content').innerHTML = html; return; }
+  html += '<div class="card" style="position:sticky;top:58px;z-index:5"><div class="btn-row"><div class="field" style="max-width:300px;margin:0"><label>Class</label><select id="tt-class">'
     + DB.classes.map(c=>'<option value="'+c.id+'" '+(c.id===state.adminTimetableClass?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('')
-    + '</select></div></div>';
-
+    + '</select></div><button class="btn btn-primary" id="tt-save">Save &amp; publish</button><button class="btn btn-ghost" id="tt-discard">Discard changes</button><span id="tt-status" class="sub"></span></div></div>';
   const classId = state.adminTimetableClass;
   const subjectsForClass = DB.subjects.filter(su=>su.classId===classId);
-
   let rows = '<tr><th>Period</th>' + WEEKDAYS.map(d=>'<th>'+d+'</th>').join('') + '</tr>';
   PERIODS.forEach(period=>{
     rows += '<tr><td class="tt-period-label">P'+period+'<div class="tt-period-time">'+PERIOD_TIMES[period]+'</div></td>';
     WEEKDAYS.forEach(day=>{
-      const entry = timetableEntry(classId, day, period);
+      const entry = ttEffective(classId, day, period);
       const isText = !!(entry && !entry.subjectId && entry.text);
       rows += '<td><select data-tt-day="'+day+'" data-tt-period="'+period+'"><option value="">— free —</option>'
-        + subjectsForClass.map(su=>'<option value="'+su.id+'" '+(entry && entry.subjectId===su.id?'selected':'')+'>'+su.name+' — '+teacherName(su)+'</option>').join('')
-        + '<option value="__text__" '+(isText?'selected':'')+'>✎ Write custom text…</option>'
-        + '</select>'
+        + subjectsForClass.map(su=>'<option value="'+su.id+'" '+(entry && entry.subjectId===su.id?'selected':'')+'>'+escapeHtml(su.name)+' — '+escapeHtml(teacherName(su))+'</option>').join('')
+        + '<option value="__text__" '+(isText?'selected':'')+'>✎ Write custom text…</option></select>'
         + '<input type="text" class="tt-text" data-tt-text-day="'+day+'" data-tt-text-period="'+period+'" maxlength="60" placeholder="e.g. Lab, Library, Seminar" value="'+(isText?escapeHtml(entry.text):'')+'" style="'+(isText?'':'display:none;')+'margin-top:4px;font-size:0.78rem;padding:6px 8px;width:100%;"/></td>';
     });
     rows += '</tr>';
   });
   html += periodEditorHtml() + '<div class="card" style="overflow-x:auto;"><h3>Weekly timetable (subject — faculty)</h3><table class="tt-table">'+rows+'</table></div>';
-
   $('#admin-content').innerHTML = html;
   bindPeriodEditor();
+  function bar(){
+    const n=Object.keys(state.ttDraft).length;
+    $('#tt-status').textContent = n ? n+' unsaved change'+(n>1?'s':'')+' — not visible to others yet' : (state.ttSaved?'All saved · published '+state.ttSaved.toLocaleTimeString():'All saved');
+    $('#tt-save').disabled=!n; $('#tt-discard').disabled=!n;
+  }
+  bar();
   $('#tt-class').addEventListener('change', e=>{ state.adminTimetableClass = e.target.value; renderAdminTimetable(); });
-  // Save one cell. mode: free | subject | text
-  function saveCell(day, period, subjectId, text){
-    const id = 'TT_'+classId+'_'+day+'_'+period;
-    const existing = DB.timetable.find(t=>t.id===id);
-    if(!subjectId && !text){
-      if(existing){ DB.timetable = DB.timetable.filter(t=>t.id!==id); syncDelete('timetable', id); }
-      return;
-    }
-    if(existing){ existing.subjectId = subjectId; existing.text = text; syncUpsert('timetable', existing); }
-    else{ const rec = {id, classId, day, period, subjectId, text}; DB.timetable.push(rec); syncUpsert('timetable', rec); }
+  $('#tt-save').addEventListener('click', saveTimetable);
+  $('#tt-discard').addEventListener('click', ()=>{ if(confirm('Discard all unsaved timetable changes?')){ state.ttDraft={}; renderAdminTimetable(); } });
+  function stage(day, period, subjectId, text){
+    const k=ttKey(classId,day,period);
+    state.ttDraft[k] = (!subjectId && !text) ? null : {id:k, classId, day, period, subjectId, text};
+    const cur=timetableEntry(classId,day,period), d=state.ttDraft[k];
+    if((!cur&&!d)||(cur&&d&&cur.subjectId===d.subjectId&&(cur.text||'')===(d.text||''))) delete state.ttDraft[k];
+    bar();
   }
   function textBox(day, period){ return document.querySelector('[data-tt-text-day="'+day+'"][data-tt-text-period="'+period+'"]'); }
-
   $all('[data-tt-day]').forEach(sel=>sel.addEventListener('change', e=>{
-    const day = sel.dataset.ttDay, period = Number(sel.dataset.ttPeriod), val = e.target.value;
-    const tb = textBox(day, period);
-    if(val === '__text__'){            // show the box; saved once something is typed
-      tb.style.display = ''; tb.focus();
-      saveCell(day, period, '', tb.value.trim());
-    } else {                           // free or subject: hide + clear the box
-      tb.style.display = 'none'; tb.value = '';
-      saveCell(day, period, val, '');
-    }
+    const day=sel.dataset.ttDay, period=Number(sel.dataset.ttPeriod), val=e.target.value, tb=textBox(day,period);
+    if(val==='__text__'){ tb.style.display=''; tb.focus(); stage(day,period,'',tb.value.trim()); }
+    else { tb.style.display='none'; tb.value=''; stage(day,period,val,''); }
   }));
-  $all('[data-tt-text-day]').forEach(tb=>tb.addEventListener('change', ()=>{
-    saveCell(tb.dataset.ttTextDay, Number(tb.dataset.ttTextPeriod), '', tb.value.trim());
-  }));
+  $all('[data-tt-text-day]').forEach(tb=>tb.addEventListener('input', ()=>{ stage(tb.dataset.ttTextDay, Number(tb.dataset.ttTextPeriod), '', tb.value.trim()); }));
 }
+window.addEventListener('beforeunload',e=>{ if(ttDirty()){ e.preventDefault(); e.returnValue=''; } });
 
 /* --- Holidays --- */
 function holidayFormHtml(){
@@ -1618,7 +1587,7 @@ function renderAdminHolidays(){
    students, attendance; timetable/holidays/sessions optional) and loads it into the app. */
 const IMPORT_SCHEMA = {
   classes:['id','course','semester','section','year'],
-  teachers:['id','teacherId','name','password','status'],
+  teachers:['id','teacherId','name','password','passHash','status'],
   subjects:['id','code','name','semester','teacherId','classId'],
   students:['id','regNo','name','dob','gender','course','dept','semester','section','email','phone','admissionYear','status','classId'],
   attendance:['id','studentId','subjectId','teacherId','date','period','status'],
@@ -1709,10 +1678,11 @@ function renderAdminSettings(){
     + '<div class="btn-row"><button class="btn btn-primary btn-sm" id="bn-save">Save front page</button></div></div>';
   html += '<div class="card"><h3>Import old data (Excel)</h3><p class="sub" style="margin-bottom:10px;">'
     + 'In your old Google Sheet choose File &gt; Download &gt; Microsoft Excel (.xlsx), then pick that file here. Tabs named classes, teachers, subjects, students and attendance are loaded. '
-    + '<b>Do this before connecting Firebase</b> (or while connected), so the sample data is replaced by your real data.</p>'
+    + '<b>Do this before connecting Firebase</b> (or while connected), so you start with only your real data.</p>'
     + '<div class="btn-row"><label class="btn btn-primary btn-sm file-btn">Choose old .xlsx file<input type="file" id="import-old" accept=".xlsx,.xls" hidden/></label></div>'
     + '<div class="btn-row"><button class="btn btn-ghost btn-sm" id="export-all">Export everything to Excel</button></div><div id="import-status" class="sub" style="margin-top:10px;"></div></div>';
 
+  html += '<div class="card"><h3>Delete all data</h3><p class="sub" style="margin-bottom:10px;">Permanently removes every class, teacher, subject, student, attendance record, timetable entry and holiday from the database (use once to clear old sample data). Download a backup first.</p><div class="btn-row"><button class="btn btn-ghost btn-sm" id="wipe-all" style="color:var(--danger);border-color:var(--danger)">Delete all data…</button></div></div>';
   html += '<div class="card"><h3>Backup &amp; restore</h3><p class="sub" style="margin-bottom:10px;">Works even without a connected database — download everything as a file, or load one back in.</p>'
     + '<div class="btn-row"><button class="btn btn-ghost btn-sm" id="backup-export">Download backup (.json)</button>'
     + '<label class="btn btn-ghost btn-sm file-btn">Restore from backup<input type="file" id="backup-import" accept=".json" hidden/></label></div></div>';
@@ -1752,6 +1722,11 @@ function renderAdminSettings(){
     } else {
       $('#sb-status').textContent = 'Could not reach the database.';
     }
+  });
+  $('#wipe-all').addEventListener('click', async ()=>{
+    if(prompt('This deletes ALL data permanently. Type DELETE to confirm.')!=='DELETE') return;
+    for(const t of SYNC_TABLES){ const ids=DB[t].map(r=>r.id); if(ids.length) await syncBatch(t,[],ids); DB[t]=[]; }
+    alert('All data deleted.'); renderAdminSettings();
   });
   const pushBtn = $('#sb-push');
   if(pushBtn) pushBtn.addEventListener('click', async ()=>{
@@ -1962,9 +1937,9 @@ function teacherFormHtml(){
   const assignedIds = DB.subjects.filter(su=>su.teacherId === (editing?editing.id:null)).map(su=>su.id);
   return '<h3>'+(editing?'Edit teacher':'Add teacher')+'</h3>'
     + '<div class="form-grid">'
-    + '<div class="field"><label>Teacher ID</label><input id="f-teacherId" value="'+t.teacherId+'"/></div>'
-    + '<div class="field"><label>Name</label><input id="f-tname" value="'+t.name+'"/></div>'
-    + '<div class="field"><label>Password</label><input id="f-tpass" type="password" autocomplete="new-password" value="'+t.password+'"/></div>'
+    + '<div class="field"><label>Teacher ID</label><input id="f-teacherId" value="'+escapeHtml(t.teacherId)+'"/></div>'
+    + '<div class="field"><label>Name</label><input id="f-tname" value="'+escapeHtml(t.name)+'"/></div>'
+    + '<div class="field"><label>Password</label><input id="f-tpass" type="password" autocomplete="new-password" value="" placeholder="'+(editing?'Leave blank to keep current':'Set a password')+'"/></div>'
     + '<div class="field"><label>Status</label><select id="f-tstatus">' + ['Active','Inactive'].map(g=>'<option '+(g===t.status?'selected':'')+'>'+g+'</option>').join('') + '</select></div>'
     + '</div>'
     + '<div class="field"><label>Assigned subjects</label><select id="f-tsubjects" multiple size="4">'
@@ -1974,38 +1949,51 @@ function teacherFormHtml(){
     + (editing?'<button class="btn btn-ghost" id="cancel-teacher-btn">Cancel</button>':'') + '</div>';
 }
 
+function teacherRowsHtml(){
+  const f=state.tF, q=f.q.toLowerCase();
+  const list=DB.teachers.filter(t=>{
+    if(f.status!=='all'&&t.status!==f.status) return false;
+    if(f.classId!=='all'&&!DB.subjects.some(su=>su.teacherId===t.id&&su.classId===f.classId)) return false;
+    return !q||(t.name||'').toLowerCase().includes(q)||(t.teacherId||'').toLowerCase().includes(q);
+  });
+  return list.map(t=>{
+    const subs=DB.subjects.filter(su=>su.teacherId===t.id).map(su=>escapeHtml(su.name)).join(', ')||'—';
+    return '<tr><td>'+escapeHtml(t.teacherId)+'</td><td>'+escapeHtml(t.name)+'</td><td>'+subs+'</td><td><span class="badge badge-'+(t.status==='Active'?'success':'danger')+'">'+t.status+'</span></td>'
+      +'<td><button class="btn btn-ghost btn-sm" data-edit-t="'+t.id+'">Edit</button> <button class="btn btn-ghost btn-sm" data-del-t="'+t.id+'">Delete</button></td></tr>';
+  }).join('')||'<tr><td colspan="5" class="empty">No teachers match.</td></tr>';
+}
+function bindTeacherRows(){
+  $all('[data-edit-t]').forEach(b=>b.addEventListener('click',()=>{ state.teacherForm=DB.teachers.find(t=>t.id===b.dataset.editT); renderAdminTeachers(); }));
+  $all('[data-del-t]').forEach(b=>b.addEventListener('click',()=>{ if(confirm('Delete this teacher?')){ syncDelete('teachers',b.dataset.delT); DB.teachers=DB.teachers.filter(t=>t.id!==b.dataset.delT); renderAdminTeachers(); } }));
+}
 function renderAdminTeachers(){
-  let html = '<div class="page-head"><div><h1>Teachers</h1><div class="sub">'+DB.teachers.length+' records</div></div></div>';
-  html += '<div class="card">' + teacherFormHtml() + '</div>';
-  html += '<div class="card"><table class="table"><thead><tr><th>Teacher ID</th><th>Name</th><th>Subjects</th><th>Status</th><th></th></tr></thead><tbody>'
-    + DB.teachers.map(t=>{
-        const subs = DB.subjects.filter(su=>su.teacherId===t.id).map(su=>su.name).join(', ') || '—';
-        return '<tr><td>'+t.teacherId+'</td><td>'+t.name+'</td><td>'+subs+'</td>'
-          + '<td><span class="badge badge-'+(t.status==='Active'?'success':'danger')+'">'+t.status+'</span></td>'
-          + '<td><button class="btn btn-ghost btn-sm" data-edit-t="'+t.id+'">Edit</button> <button class="btn btn-ghost btn-sm" data-del-t="'+t.id+'">Delete</button></td></tr>';
-      }).join('')
-    + '</tbody></table></div>';
-
-  $('#admin-content').innerHTML = html;
-  bindTeacherFormEvents();
-  $all('[data-edit-t]').forEach(b=>b.addEventListener('click', ()=>{ state.teacherForm = DB.teachers.find(t=>t.id===b.dataset.editT); renderAdminTeachers(); }));
-  $all('[data-del-t]').forEach(b=>b.addEventListener('click', ()=>{
-    if(confirm('Delete this teacher?')){
-      syncDelete('teachers', b.dataset.delT);
-      DB.teachers = DB.teachers.filter(t=>t.id!==b.dataset.delT);
-      renderAdminTeachers();
-    }
-  }));
+  const f=state.tF;
+  let html='<div class="page-head"><div><h1>Teachers</h1><div class="sub">'+DB.teachers.length+' records</div></div></div>';
+  html+='<div class="card">'+teacherFormHtml()+'</div>';
+  html+='<div class="card"><div class="form-row"><div class="field"><label>Search name / ID</label><input id="tf-q" value="'+escapeHtml(f.q)+'"/></div>'
+    +'<div class="field"><label>Status</label><select id="tf-status">'+['all','Active','Inactive'].map(s=>'<option value="'+s+'" '+(f.status===s?'selected':'')+'>'+(s==='all'?'All':s)+'</option>').join('')+'</select></div>'
+    +'<div class="field"><label>Class / Section</label><select id="tf-class"><option value="all">All classes</option>'+DB.classes.map(c=>'<option value="'+c.id+'" '+(f.classId===c.id?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('')+'</select></div></div>'
+    +'<table class="table"><thead><tr><th>Teacher ID</th><th>Name</th><th>Subjects</th><th>Status</th><th></th></tr></thead><tbody id="t-body">'+teacherRowsHtml()+'</tbody></table></div>';
+  $('#admin-content').innerHTML=html;
+  bindTeacherFormEvents(); bindTeacherRows();
+  const upd=()=>{ $('#t-body').innerHTML=teacherRowsHtml(); bindTeacherRows(); };
+  $('#tf-q').addEventListener('input',e=>{ f.q=e.target.value; upd(); });
+  $('#tf-status').addEventListener('change',e=>{ f.status=e.target.value; upd(); });
+  $('#tf-class').addEventListener('change',e=>{ f.classId=e.target.value; upd(); });
 }
 
 function bindTeacherFormEvents(){
-  $('#save-teacher-btn').addEventListener('click', ()=>{
+  $('#save-teacher-btn').addEventListener('click', async ()=>{
     const selected = Array.from($('#f-tsubjects').selectedOptions).map(o=>o.value);
-    const data = {teacherId:$('#f-teacherId').value.trim(), name:$('#f-tname').value.trim(), password:$('#f-tpass').value, status:$('#f-tstatus').value};
+    const data = {teacherId:$('#f-teacherId').value.trim(), name:$('#f-tname').value.trim(), status:$('#f-tstatus').value};
+    const pw=$('#f-tpass').value;
     if(!data.name || !data.teacherId){ alert('Teacher ID and name are required.'); return; }
+    if(!state.teacherForm && !pw){ alert('Set a password for the new teacher.'); return; }
+    const rid = state.teacherForm ? state.teacherForm.id : uid('TC');
+    if(pw){ data.passHash = await hashPw(pw, rid); data.password = ''; }
     let teacherId, savedTeacher;
     if(state.teacherForm){ Object.assign(state.teacherForm, data); teacherId = state.teacherForm.id; savedTeacher = state.teacherForm; }
-    else { const newT = Object.assign({id:uid('TC')}, data); DB.teachers.push(newT); teacherId = newT.id; savedTeacher = newT; }
+    else { const newT = Object.assign({id:rid}, data); DB.teachers.push(newT); teacherId = newT.id; savedTeacher = newT; }
     syncUpsert('teachers', savedTeacher);
     const touchedSubjects = [];
     DB.subjects.forEach(su=>{
@@ -2077,7 +2065,7 @@ function bindSubjectFormEvents(){
 /* --- Classes --- */
 function classFormHtml(){
   const editing = state.classForm;
-  const c = editing || {course:'M.Com', semester:1, section:'A', year:'2025-26'};
+  const c = editing || {course:'', semester:1, section:'A', year:''};
   return '<h3>'+(editing?'Edit class':'Add class')+'</h3>'
     + '<div class="form-grid">'
     + '<div class="field"><label>Course</label><input id="f-ccourse" value="'+c.course+'"/></div>'
@@ -2134,7 +2122,7 @@ function renderAdminAttendance(){
     + '<div class="field"><label>Class</label><select id="att-class"><option value="all">All classes</option>' + DB.classes.map(c=>'<option value="'+c.id+'" '+(f.classId===c.id?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Subject</label><select id="att-subject"><option value="all">All subjects</option>' + DB.subjects.map(su=>'<option value="'+su.id+'" '+(f.subjectId===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Teacher</label><select id="att-teacher"><option value="all">All teachers</option>' + DB.teachers.map(t=>'<option value="'+t.id+'" '+(f.teacherId===t.id?'selected':'')+'>'+t.name+'</option>').join('') + '</select></div>'
-    + '<div class="field"><label>Month</label><select id="att-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(f.month===m.prefix?'selected':'')+'>'+m.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Month</label><select id="att-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(f.month===m.prefix?'selected':'')+'>'+m.name+' '+m.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>From</label><input type="date" id="att-from" value="'+(f.from||'')+'"/></div><div class="field"><label>To</label><input type="date" id="att-to" value="'+(f.to||'')+'"/></div>'
     + '<div class="field"><label>Status</label><select id="att-status"><option value="">All</option><option value="P" '+(f.status==='P'?'selected':'')+'>Present</option><option value="A" '+(f.status==='A'?'selected':'')+'>Absent</option></select></div>'
     + '<div class="field"><label>Student</label><input id="att-search" placeholder="Search by name or reg. no." value="'+f.q+'"/></div>'
@@ -2258,7 +2246,7 @@ function renderAdminCalendar(){
 
   let html = '<div class="page-head"><div><h1>Calendar</h1><div class="sub">Day-by-day attendance across the institution.</div></div></div>';
   html += '<div class="card"><div class="cal-toolbar">'
-    + '<div class="field" style="margin:0;min-width:180px;"><label>Month</label><select id="acal-month">' + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' 2026</option>').join('') + '</select></div>'
+    + '<div class="field" style="margin:0;min-width:180px;"><label>Month</label><select id="acal-month">' + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' '+mo.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
     + '<div class="field" style="margin:0;min-width:200px;"><label>Class</label><select id="acal-class"><option value="all">All classes</option>' + DB.classes.map(c=>'<option value="'+c.id+'" '+(state.adminCalClass===c.id?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('') + '</select></div>'
     + '</div>'
     + calendarHtml(m, d=>adminDayStats(state.adminCalClass, d), state.adminCalDate)
@@ -2333,37 +2321,14 @@ renderStudentDashboard = function(){
 document.addEventListener('DOMContentLoaded', initApp);
 
 function initApp(){
-  if(!BACKEND_ON()){
-    console.warn('No Firebase project configured yet — running in local-only demo mode (data will not be shared between users/devices). Sign in as Admin → Settings to connect one.');
-    seedDB();
-    generateAttendance();
-    populateLoginSelects();
-    bindLoginEvents();
-    return;
-  }
+  const ready = ()=>{ populateLoginSelects(); bindLoginEvents(); };
+  if(!BACKEND_ON()){ ready(); return; }          // no database configured: start empty
+  getRev().then(r=>{ REV_SEEN=r||{}; }); setInterval(pollRev,5000);
   apiGetAll().then(res=>{
-    if(!res || !res.ok) throw new Error((res && res.error) || 'Could not load from the database');
-    if(res && res.ok && res.data && res.data.students && res.data.students.length){
-      SYNC_TABLES.forEach(t=>{ DB[t] = res.data[t] || []; });
-      populateLoginSelects();
-      bindLoginEvents();
-    } else {
-      // Database is empty (first run) — seed demo data locally, then push it up once.
-      seedDB();
-      generateAttendance();
-      syncSeedAll().finally(()=>{
-        populateLoginSelects();
-        bindLoginEvents();
-      });
-    }
-  }).catch(err=>{
-    console.error('Could not reach the shared backend, falling back to local demo data.', err);
-    seedDB();
-    generateAttendance();
-    populateLoginSelects();
-    bindLoginEvents();
-  });
+    if(res && res.ok) SYNC_TABLES.forEach(t=>{ DB[t] = res.data[t] || []; });
+  }).catch(err=>console.error(err)).finally(ready);
 }
+initApp();
 </script>
 </body>
 </html>
