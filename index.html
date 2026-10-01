@@ -475,6 +475,16 @@ async function syncBatch(table, ups, dels){
   const w=(ups||[]).map(r=>fsWrite(c,table,r)).concat((dels||[]).map(id=>({delete:fsRoot(c)+'/'+table+'/'+id})));
   return pushWrites(w,[table]);
 }
+/* Several tables in ONE request, e.g. timetable + period settings together. */
+async function syncMulti(parts){
+  if(!BACKEND_ON()) return true;
+  const c=getSupabaseCfg(), w=[], tables=[];
+  parts.forEach(p=>{
+    const x=(p.ups||[]).map(r=>fsWrite(c,p.table,r)).concat((p.dels||[]).map(id=>({delete:fsRoot(c)+'/'+p.table+'/'+id})));
+    if(x.length){ x.forEach(i=>w.push(i)); tables.push(p.table); }
+  });
+  return pushWrites(w,tables);
+}
 /* Pushes every local table in one go (used only by import / restore / "push local data"). */
 async function syncSeedAll(){
   if(!BACKEND_ON()) return true;
@@ -524,6 +534,11 @@ async function pollRev(){
     const c=getSupabaseCfg();
     const res=await Promise.all(changed.map(t=>fetchTable(c,t)));
     changed.forEach((t,i)=>{ DB[t]=res[i]; });
+    if(changed.includes('settings')){
+      applyPeriodConfig(); applyBrand();
+      const ms=state.role==='teacher' && state.teacherTab==='mark' ? $('#mark-period') : null;
+      if(ms){ if(state.markPeriod>PERIODS.length) state.markPeriod=1; ms.innerHTML=PERIODS.map(p=>'<option value="'+p+'" '+(p===state.markPeriod?'selected':'')+'>Period '+p+' · '+PERIOD_TIMES[p]+'</option>').join(''); }
+    }
     liveRefresh();
   }catch(e){ console.error(e); } finally{ POLL_BUSY=false; }
 }
@@ -776,25 +791,40 @@ function teacherClassesOn(teacher, day){
 function teacherName(su){ const t = DB.teachers.find(x=>x.id===su.teacherId); return t ? t.name : 'no faculty'; }
 function fmtMin(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
 function periodRowsHtml(list){ return list.map((p,i)=>'<div class="pc-row"><b>P'+(i+1)+'</b><input type="time" class="pc-s" value="'+p[0]+'"/><span>to</span><input type="time" class="pc-e" value="'+p[1]+'"/></div>').join(''); }
-function periodEditorHtml(){
-  const cur = PERIODS.map(p=>PERIOD_TIMES[p].split(' – '));
-  const f = (id,l,v,t)=>'<div class="field"><label>'+l+'</label><input id="'+id+'" type="'+(t||'number')+'" value="'+v+'" min="0"/></div>';
-  return '<div class="card"><h3>Period schedule</h3><div class="form-row">'+f('pc-n','Periods per day',PERIODS.length)+f('pc-start','First period starts','09:00','time')+f('pc-dur','Minutes per period',50)
-    +f('pc-b1','Short break after period',2)+f('pc-b1m','Break minutes',10)+f('pc-b2','Lunch after period',4)+f('pc-b2m','Lunch minutes',45)+'</div>'
-    +'<div class="btn-row"><button class="btn btn-ghost btn-sm" id="pc-gen">Auto-fill times</button></div><div id="pc-rows">'+periodRowsHtml(cur)+'</div>'
-    +'<div class="btn-row"><button class="btn btn-primary btn-sm" id="pc-save">Save periods</button></div></div>';
+function toMin(t){ const x=String(t||'').split(':').map(Number); return (x[0]||0)*60+(x[1]||0); }
+function savedPeriodList(){ return PERIODS.map(p=>PERIOD_TIMES[p].split(' – ')); }
+function curPeriodList(){ return state.periodDraft || savedPeriodList(); }
+function periodGenValues(){
+  const cur=curPeriodList(), g=state.periodGen||{};
+  const d0=Math.max(5, toMin(cur[0][1])-toMin(cur[0][0])) || 50;
+  return {n:g.n!=null?g.n:cur.length, start:g.start||cur[0][0]||'09:00', dur:g.dur!=null?g.dur:d0, b1:g.b1!=null?g.b1:2, b1m:g.b1m!=null?g.b1m:10, b2:g.b2!=null?g.b2:4, b2m:g.b2m!=null?g.b2m:45};
 }
-function bindPeriodEditor(){
-  const v = id=>Number($('#'+id).value)||0;
-  $('#pc-gen').addEventListener('click', ()=>{
-    const [h,m] = ($('#pc-start').value||'09:00').split(':').map(Number); let t = h*60+m; const list = [];
-    for(let i=1;i<=Math.max(1,Math.min(12,v('pc-n')));i++){ list.push([fmtMin(t), fmtMin(t+v('pc-dur'))]); t += v('pc-dur'); if(i===v('pc-b1')) t += v('pc-b1m'); if(i===v('pc-b2')) t += v('pc-b2m'); }
-    $('#pc-rows').innerHTML = periodRowsHtml(list);
-  });
-  $('#pc-save').addEventListener('click', ()=>{
-    const s = $all('.pc-s').map(x=>x.value), e = $all('.pc-e').map(x=>x.value);
-    if(s.some(x=>!x) || e.some(x=>!x)){ alert('Fill every start and end time.'); return; }
-    setSetting('periods', s.map((x,i)=>({s:x, e:e[i]}))); applyPeriodConfig(); renderAdminTimetable();
+function periodEditorHtml(){
+  const g=periodGenValues();
+  const f = (id,l,v,t)=>'<div class="field"><label>'+l+'</label><input id="'+id+'" type="'+(t||'number')+'" value="'+v+'" min="0"/></div>';
+  return '<div class="card"><h3>Periods &amp; timings</h3><p class="sub" style="margin-bottom:10px;">Change any value to regenerate the times, or edit a single start/end time directly. Saved together with the timetable by <b>Save &amp; publish</b>, and applies to every class.</p>'
+    +'<div class="form-row">'+f('pc-n','Periods per day',g.n)+f('pc-start','First period starts',g.start,'time')+f('pc-dur','Minutes per period',g.dur)
+    +f('pc-b1','Short break after period',g.b1)+f('pc-b1m','Break minutes',g.b1m)+f('pc-b2','Lunch after period',g.b2)+f('pc-b2m','Lunch minutes',g.b2m)+'</div>'
+    +'<div id="pc-rows">'+periodRowsHtml(curPeriodList())+'</div></div>';
+}
+function genPeriodList(g){
+  let t=toMin(g.start), list=[]; const n=Math.max(1,Math.min(12,g.n||1));
+  for(let i=1;i<=n;i++){ list.push([fmtMin(t), fmtMin(t+g.dur)]); t+=g.dur; if(i===g.b1) t+=g.b1m; if(i===g.b2) t+=g.b2m; }
+  return list;
+}
+function setPeriodDraft(list){ state.periodDraft = (JSON.stringify(list)===JSON.stringify(savedPeriodList())) ? null : list; }
+function bindPeriodEditor(onChange){
+  const num=id=>Number($('#'+id).value)||0;
+  const regen=()=>{
+    const g={n:num('pc-n'), start:$('#pc-start').value||'09:00', dur:Math.max(5,num('pc-dur')), b1:num('pc-b1'), b1m:num('pc-b1m'), b2:num('pc-b2'), b2m:num('pc-b2m')};
+    if(g.n<1) return;
+    state.periodGen=g; const list=genPeriodList(g); setPeriodDraft(list);
+    $('#pc-rows').innerHTML=periodRowsHtml(list); onChange();
+  };
+  ['pc-n','pc-start','pc-dur','pc-b1','pc-b1m','pc-b2','pc-b2m'].forEach(id=>$('#'+id).addEventListener('input',regen));
+  $('#pc-rows').addEventListener('input',()=>{
+    const st=$all('.pc-s').map(x=>x.value), en=$all('.pc-e').map(x=>x.value);
+    setPeriodDraft(st.map((x,i)=>[x,en[i]])); onChange();
   });
 }
 
@@ -803,7 +833,7 @@ const state = {
   role:null, studentId:null, teacherId:null,
   studentTab:'dashboard', teacherTab:'dashboard', adminTab:'overview',
   markSubject:null, markDate:todayStr(), markPeriod:1, markLoaded:false, markDraft:{},
-  recFilters:{subject:'all', month:'all', q:''},
+  recFilters:{subject:'all', month:'all', period:'all', date:'', q:''},
   reportSubject:null, reportMonth:null,
   studentForm:null, studentSearch:'',
   teacherForm:null, subjectForm:null, classForm:null,
@@ -811,7 +841,7 @@ const state = {
   studentCalMonth:null, studentCalDate:null,
   teacherCalMonth:null, teacherCalSubject:'all', teacherCalDate:null,
   adminCalMonth:null, adminCalClass:'all', adminCalDate:null,
-  adminTimetableClass:null, holidayForm:null, ttDraft:{}, ttSaved:null, ttF:{classId:'all',day:'all',mine:false}, tF:{q:'',status:'all',classId:'all'},
+  adminTimetableClass:null, holidayForm:null, ttDraft:{}, ttSaved:null, ttF:{classId:'all',day:'all',period:'all',mine:false}, tF:{q:'',status:'all',classId:'all'},
   sessionDraft:{topics:'', files:[]}
 };
 
@@ -973,6 +1003,27 @@ function escapeHtml(str){
   return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+/* ---- holidays & events shown on student + teacher dashboards ---- */
+function upcomingHolidays(days){
+  const t=todayStr(), e=new Date(); e.setDate(e.getDate()+days);
+  const end=e.toLocaleDateString('en-CA');
+  return DB.holidays.filter(h=>h.date>=t && h.date<=end).sort((a,b)=>a.date<b.date?-1:1);
+}
+function daysAway(d){
+  const n=Math.round((new Date(d+'T00:00:00')-new Date(todayStr()+'T00:00:00'))/86400000);
+  return n===0?'Today':n===1?'Tomorrow':'in '+n+' days';
+}
+function holidayTodayHtml(){
+  return DB.holidays.filter(h=>h.date===todayStr()).map(h=>'<div class="notice notice-warning"><b>Today · '+escapeHtml(h.name)+'</b> ('+escapeHtml(h.type)+')</div>').join('');
+}
+function holidayUpcomingHtml(){
+  const list=upcomingHolidays(45);
+  return '<div class="card"><h3>Upcoming holidays &amp; events</h3>'
+    + (list.length ? list.slice(0,6).map(h=>'<div class="holiday-row"><span class="holiday-date">'+h.date+'</span><span class="holiday-name">'+escapeHtml(h.name)+'</span><span class="badge badge-'+(h.type==='Holiday'?'danger':'warning')+'">'+escapeHtml(h.type)+'</span><span class="sub">'+daysAway(h.date)+'</span></div>').join('')
+      : '<p class="empty">No holidays or events in the next 45 days.</p>')
+    + '</div>';
+}
+
 function renderHolidayListView(role){
   const list = DB.holidays.slice().sort((a,b)=> a.date<b.date?-1:1);
   let html = '<div class="page-head"><div><h1>Academic Calendar</h1><div class="sub">Institution holidays and events.</div></div></div>';
@@ -988,6 +1039,7 @@ function timetableGridHtml(classId, highlightTeacherId, opts){
   opts=opts||{}; const DAYS=(opts.day&&opts.day!=='all')?[opts.day]:WEEKDAYS;
   let rows = '<tr><th>Period</th>' + DAYS.map(d=>'<th>'+d+'</th>').join('') + '</tr>';
   PERIODS.forEach(period=>{
+    if(opts.period && opts.period!=='all' && Number(opts.period)!==period) return;
     rows += '<tr><td class="tt-period-label">P'+period+'<div class="tt-period-time">'+PERIOD_TIMES[period]+'</div></td>';
     DAYS.forEach(day=>{
       const entry = timetableEntry(classId, day, period);
@@ -1022,6 +1074,7 @@ function renderStudentDashboard(){
   if(lowSubjects.length){
     html += '<div class="notice notice-warning">Attendance shortage: '+lowSubjects.map(s=>s.name).join(', ')+' '+(lowSubjects.length>1?'are':'is')+' below the 75% requirement.</div>';
   }
+  html += holidayTodayHtml() + holidayUpcomingHtml();
 
   html += '<div class="stat-grid">'
     + '<div class="stat-card"><div class="num">'+overall.pct+'%</div><div class="label">Overall attendance</div></div>'
@@ -1130,6 +1183,7 @@ function renderTeacherDashboard(teacher){
   const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
   const classIds = new Set(subjects.map(s=>s.classId));
   let html = '<div class="page-head"><div><h1>Welcome back, '+teacher.name.split(' ')[0]+'</h1><div class="sub">'+subjects.length+' subjects · '+classIds.size+' classes</div></div></div>';
+  html += holidayTodayHtml();
 
   const day = state.teacherDay || (WEEKDAYS.indexOf(todayDayName())>-1 ? todayDayName() : 'Mon'), dDate = dateForDay(day);
   html += '<div class="card"><h3>My classes · '+day+' ('+dDate+')</h3><div class="day-chips">'
@@ -1141,12 +1195,13 @@ function renderTeacherDashboard(teacher){
       const su = DB.subjects.find(x=>x.id===tt.subjectId), cls = DB.classes.find(x=>x.id===tt.classId);
       const already = DB.attendance.some(a=>a.subjectId===tt.subjectId && a.date===dDate && a.period===tt.period);
       return '<button class="class-btn '+(already?'cb-done':'')+'" data-open-subject="'+tt.subjectId+'" data-open-period="'+tt.period+'" data-open-date="'+dDate+'">'
-        + '<span class="cb-time">Period '+tt.period+' · '+PERIOD_TIMES[tt.period]+'</span>'
+        + '<span class="cb-time">Period '+tt.period+' · '+(PERIOD_TIMES[tt.period]||'')+'</span>'
         + '<span class="cb-subject">'+(su?su.name:'—')+'</span>'
         + '<span class="cb-meta">'+(cls?cls.course+' S'+cls.semester+'-'+cls.section:'')+(already?' · Marked ✓':' · Tap to mark attendance')+'</span></button>';
     }).join('') + '</div>';
   }
   html += '</div>';
+  html += holidayUpcomingHtml();
 
   html += '<div class="stat-grid">'
     + '<div class="stat-card"><div class="num">'+subjects.length+'</div><div class="label">Subjects assigned</div></div>'
@@ -1174,21 +1229,24 @@ function renderTeacherTimetable(teacher){
   const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
   const classIds = Array.from(new Set(subjects.map(s=>s.classId)));
   const f = state.ttF; if(f.classId!=='all' && !classIds.includes(f.classId)) f.classId='all';
+  if(f.period!=='all' && Number(f.period)>PERIODS.length) f.period='all';
   const lbl = c=>c?c.course+' S'+c.semester+'-'+c.section:'';
   let html = '<div class="page-head"><div><h1>My Timetable</h1><div class="sub">Updates live when the admin publishes changes.</div></div></div>';
   html += '<div class="card"><div class="form-row">'
     + '<div class="field"><label>Class / Section</label><select id="ttf-class"><option value="all">All my classes</option>'+classIds.map(id=>'<option value="'+id+'" '+(f.classId===id?'selected':'')+'>'+lbl(DB.classes.find(c=>c.id===id))+'</option>').join('')+'</select></div>'
     + '<div class="field"><label>Day</label><select id="ttf-day"><option value="all">All days</option>'+WEEKDAYS.map(d=>'<option '+(f.day===d?'selected':'')+'>'+d+'</option>').join('')+'</select></div>'
+    + '<div class="field"><label>Period</label><select id="ttf-period"><option value="all">All periods</option>'+PERIODS.map(p=>'<option value="'+p+'" '+(String(f.period)===String(p)?'selected':'')+'>Period '+p+' · '+PERIOD_TIMES[p]+'</option>').join('')+'</select></div>'
     + '<div class="field"><label>Show</label><select id="ttf-mine"><option value="0">All periods</option><option value="1" '+(f.mine?'selected':'')+'>Only my periods</option></select></div></div></div>';
   const show = f.classId==='all' ? classIds : [f.classId];
   if(!show.length) html += '<div class="card"><p class="empty">No subjects are assigned to you yet.</p></div>';
   show.forEach(cid=>{
     const cls = DB.classes.find(c=>c.id===cid);
-    html += '<div class="card" style="overflow-x:auto;"><h3>'+(cls?cls.course+' · Semester '+cls.semester+' · Section '+cls.section:cid)+'</h3>' + timetableGridHtml(cid, teacher.id, {day:f.day, mine:f.mine}) + '</div>';
+    html += '<div class="card" style="overflow-x:auto;"><h3>'+(cls?cls.course+' · Semester '+cls.semester+' · Section '+cls.section:cid)+'</h3>' + timetableGridHtml(cid, teacher.id, {day:f.day, period:f.period, mine:f.mine}) + '</div>';
   });
   $('#teacher-content').innerHTML = html;
   $('#ttf-class').addEventListener('change',e=>{ f.classId=e.target.value; renderTeacherTimetable(teacher); });
   $('#ttf-day').addEventListener('change',e=>{ f.day=e.target.value; renderTeacherTimetable(teacher); });
+  $('#ttf-period').addEventListener('change',e=>{ f.period=e.target.value; renderTeacherTimetable(teacher); });
   $('#ttf-mine').addEventListener('change',e=>{ f.mine=e.target.value==='1'; renderTeacherTimetable(teacher); });
 }
 
@@ -1390,10 +1448,13 @@ function renderTeacherCalendar(teacher){
 
 function renderTeacherRecords(teacher){
   const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
+  if(state.recFilters.period!=='all' && Number(state.recFilters.period)>PERIODS.length) state.recFilters.period='all';
   let html = '<div class="page-head"><div><h1>Attendance records</h1><div class="sub">Review or correct previously marked attendance.</div></div></div>';
   html += '<div class="card"><div class="form-row">'
     + '<div class="field"><label>Subject</label><select id="rec-subject"><option value="all">All subjects</option>' + subjects.map(su=>'<option value="'+su.id+'" '+(state.recFilters.subject===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Month</label><select id="rec-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(state.recFilters.month===m.prefix?'selected':'')+'>'+m.name+' '+m.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Period</label><select id="rec-period"><option value="all">All periods</option>' + PERIODS.map(p=>'<option value="'+p+'" '+(String(state.recFilters.period)===String(p)?'selected':'')+'>Period '+p+' · '+PERIOD_TIMES[p]+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Day</label><div class="btn-row" style="flex-wrap:nowrap;gap:6px;"><input type="date" id="rec-date" value="'+state.recFilters.date+'"/><button class="btn btn-ghost btn-sm" id="rec-date-clear" type="button">Clear</button></div></div>'
     + '<div class="field"><label>Student</label><input id="rec-search" placeholder="Search by name or reg. no." value="'+state.recFilters.q+'"/></div>'
     + '</div></div>'
     + '<div id="rec-results-card" class="card"></div>';
@@ -1402,6 +1463,9 @@ function renderTeacherRecords(teacher){
 
   $('#rec-subject').addEventListener('change', e=>{ state.recFilters.subject=e.target.value; renderRecResults(teacher); });
   $('#rec-month').addEventListener('change', e=>{ state.recFilters.month=e.target.value; renderRecResults(teacher); });
+  $('#rec-period').addEventListener('change', e=>{ state.recFilters.period=e.target.value; renderRecResults(teacher); });
+  $('#rec-date').addEventListener('change', e=>{ state.recFilters.date=e.target.value; renderRecResults(teacher); });
+  $('#rec-date-clear').addEventListener('click', ()=>{ state.recFilters.date=''; $('#rec-date').value=''; renderRecResults(teacher); });
   $('#rec-search').addEventListener('input', e=>{ state.recFilters.q=e.target.value; renderRecResults(teacher); });
 
   renderRecResults(teacher);
@@ -1410,7 +1474,9 @@ function renderTeacherRecords(teacher){
 function renderRecResults(teacher){
   let recs = DB.attendance.filter(a=>a.teacherId===teacher.id);
   if(state.recFilters.subject!=='all') recs = recs.filter(a=>a.subjectId===state.recFilters.subject);
-  if(state.recFilters.month!=='all') recs = recs.filter(a=>a.date.startsWith(state.recFilters.month));
+  if(state.recFilters.date) recs = recs.filter(a=>a.date===state.recFilters.date);          // a chosen day overrides the month filter
+  else if(state.recFilters.month!=='all') recs = recs.filter(a=>a.date.startsWith(state.recFilters.month));
+  if(state.recFilters.period!=='all') recs = recs.filter(a=>String(a.period)===String(state.recFilters.period));
   if(state.recFilters.q){
     const q = state.recFilters.q.toLowerCase();
     recs = recs.filter(a=>{ const s=DB.students.find(st=>st.id===a.studentId); return s && (s.name.toLowerCase().includes(q) || s.regNo.toLowerCase().includes(q)); });
@@ -1421,7 +1487,7 @@ function renderRecResults(teacher){
     + (recs.map(r=>{
         const s = DB.students.find(st=>st.id===r.studentId);
         const su = DB.subjects.find(x=>x.id===r.subjectId);
-        return '<tr><td>'+r.date+'</td><td>'+r.period+'</td><td>'+su.name+'</td><td>'+s.regNo+'</td><td>'+s.name+'</td>'
+        return '<tr><td>'+r.date+'</td><td>P'+r.period+(PERIOD_TIMES[r.period]?'<div class="tt-period-time">'+PERIOD_TIMES[r.period]+'</div>':'')+'</td><td>'+su.name+'</td><td>'+s.regNo+'</td><td>'+s.name+'</td>'
           + '<td><span class="badge badge-'+(r.status==='P'?'success':'danger')+'">'+(r.status==='P'?'Present':'Absent')+'</span></td>'
           + '<td><button class="btn btn-ghost btn-sm" data-flip="'+r.id+'">Flip</button></td></tr>';
       }).join('') || '<tr><td colspan="7" class="empty">No records match these filters.</td></tr>')
@@ -1525,30 +1591,38 @@ function renderAdminContent(){
 
 /* --- Timetable --- */
 function ttKey(c,d,p){ return 'TT_'+c+'_'+d+'_'+p; }
-function ttDirty(){ return Object.keys(state.ttDraft).length>0; }
+function ttDirty(){ return Object.keys(state.ttDraft).length>0 || !!state.periodDraft; }
 function ttEffective(c,d,p){ const k=ttKey(c,d,p); return (k in state.ttDraft) ? state.ttDraft[k] : timetableEntry(c,d,p); }
 async function saveTimetable(){
-  const ups=[], dels=[];
+  let ups=[], dels=[];
   Object.keys(state.ttDraft).forEach(k=>{ const v=state.ttDraft[k]; if(v===null){ if(DB.timetable.some(t=>t.id===k)) dels.push(k); } else ups.push(v); });
+  let setRec=null;
+  if(state.periodDraft){
+    const pl=state.periodDraft;
+    if(pl.some(x=>!x[0]||!x[1]||toMin(x[1])<=toMin(x[0]))){ alert('Every period needs a start time and an end time that is later than its start.'); return; }
+    setRec={id:'periods', value:JSON.stringify(pl.map(x=>({s:x[0],e:x[1]})))};
+    if(pl.length<PERIODS.length){
+      const orphans=DB.timetable.filter(t=>t.period>pl.length);
+      if(orphans.length && !confirm('Reducing to '+pl.length+' periods will remove '+orphans.length+' timetable entries that sit in the later periods. Continue?')) return;
+      orphans.forEach(t=>{ if(!dels.includes(t.id)) dels.push(t.id); });
+      ups=ups.filter(u=>u.period<=pl.length);
+    }
+  }
   const btn=$('#tt-save'); if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
-  const ok=await syncBatch('timetable',ups,dels);
+  const parts=[{table:'timetable',ups,dels}]; if(setRec) parts.push({table:'settings',ups:[setRec],dels:[]});
+  const ok=await syncMulti(parts);
   if(!ok){ alert('Could not save — check your connection. Your changes are still here.'); renderAdminTimetable(); return; }
   const ids=new Set(dels.concat(ups.map(u=>u.id)));
   DB.timetable=DB.timetable.filter(t=>!ids.has(t.id)).concat(ups);
-  state.ttDraft={}; state.ttSaved=new Date(); renderAdminTimetable();
+  if(setRec){ const i=DB.settings.findIndex(x=>x.id==='periods'); if(i>=0) DB.settings[i]=setRec; else DB.settings.push(setRec); applyPeriodConfig(); }
+  state.ttDraft={}; state.periodDraft=null; state.periodGen=null; state.ttSaved=new Date(); renderAdminTimetable();
 }
-function renderAdminTimetable(){
-  if(!state.adminTimetableClass || !DB.classes.find(c=>c.id===state.adminTimetableClass)) state.adminTimetableClass = DB.classes[0] ? DB.classes[0].id : null;
-  let html = '<div class="page-head"><div><h1>Timetable</h1><div class="sub">Edit freely, then press <b>Save &amp; publish</b>. Students and faculty see it within seconds.</div></div></div>';
-  if(!DB.classes.length){ html += '<div class="card"><p class="empty">Add a class first.</p></div>'; $('#admin-content').innerHTML = html; return; }
-  html += '<div class="card" style="position:sticky;top:58px;z-index:5"><div class="btn-row"><div class="field" style="max-width:300px;margin:0"><label>Class</label><select id="tt-class">'
-    + DB.classes.map(c=>'<option value="'+c.id+'" '+(c.id===state.adminTimetableClass?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('')
-    + '</select></div><button class="btn btn-primary" id="tt-save">Save &amp; publish</button><button class="btn btn-ghost" id="tt-discard">Discard changes</button><span id="tt-status" class="sub"></span></div></div>';
-  const classId = state.adminTimetableClass;
+function ttGridHtml(classId){
   const subjectsForClass = DB.subjects.filter(su=>su.classId===classId);
   let rows = '<tr><th>Period</th>' + WEEKDAYS.map(d=>'<th>'+d+'</th>').join('') + '</tr>';
-  PERIODS.forEach(period=>{
-    rows += '<tr><td class="tt-period-label">P'+period+'<div class="tt-period-time">'+PERIOD_TIMES[period]+'</div></td>';
+  curPeriodList().forEach((pt,i)=>{
+    const period=i+1;
+    rows += '<tr><td class="tt-period-label">P'+period+'<div class="tt-period-time">'+(pt[0]||'--:--')+' – '+(pt[1]||'--:--')+'</div></td>';
     WEEKDAYS.forEach(day=>{
       const entry = ttEffective(classId, day, period);
       const isText = !!(entry && !entry.subjectId && entry.text);
@@ -1559,32 +1633,47 @@ function renderAdminTimetable(){
     });
     rows += '</tr>';
   });
-  html += periodEditorHtml() + '<div class="card" style="overflow-x:auto;"><h3>Weekly timetable (subject — faculty)</h3><table class="tt-table">'+rows+'</table></div>';
+  return '<h3>Weekly timetable (subject — faculty)</h3><table class="tt-table">'+rows+'</table>';
+}
+function ttBar(){
+  const st=$('#tt-status'); if(!st) return;
+  const n=Object.keys(state.ttDraft).length, pd=!!state.periodDraft, total=n+(pd?1:0);
+  const what=[]; if(n) what.push(n+' timetable change'+(n>1?'s':'')); if(pd) what.push('period timings');
+  st.textContent = total ? 'Unsaved: '+what.join(' + ')+' — not visible to others yet' : (state.ttSaved?'All saved · published '+state.ttSaved.toLocaleTimeString():'All saved');
+  $('#tt-save').disabled=!total; $('#tt-discard').disabled=!total;
+}
+function renderAdminTimetable(){
+  if(!state.adminTimetableClass || !DB.classes.find(c=>c.id===state.adminTimetableClass)) state.adminTimetableClass = DB.classes[0] ? DB.classes[0].id : null;
+  let html = '<div class="page-head"><div><h1>Timetable</h1><div class="sub">Edit freely, then press <b>Save &amp; publish</b>. Students and faculty see it within seconds.</div></div></div>';
+  if(!DB.classes.length){ html += '<div class="card"><p class="empty">Add a class first.</p></div>'; $('#admin-content').innerHTML = html; return; }
+  html += '<div class="card" style="position:sticky;top:58px;z-index:5"><div class="btn-row"><div class="field" style="max-width:300px;margin:0"><label>Class</label><select id="tt-class">'
+    + DB.classes.map(c=>'<option value="'+c.id+'" '+(c.id===state.adminTimetableClass?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('')
+    + '</select></div><button class="btn btn-primary" id="tt-save">Save &amp; publish</button><button class="btn btn-ghost" id="tt-discard">Discard changes</button><span id="tt-status" class="sub"></span></div></div>';
+  const classId = state.adminTimetableClass;
+  html += periodEditorHtml() + '<div class="card" id="tt-grid" style="overflow-x:auto;">'+ttGridHtml(classId)+'</div>';
   $('#admin-content').innerHTML = html;
-  bindPeriodEditor();
-  function bar(){
-    const n=Object.keys(state.ttDraft).length;
-    $('#tt-status').textContent = n ? n+' unsaved change'+(n>1?'s':'')+' — not visible to others yet' : (state.ttSaved?'All saved · published '+state.ttSaved.toLocaleTimeString():'All saved');
-    $('#tt-save').disabled=!n; $('#tt-discard').disabled=!n;
-  }
-  bar();
-  $('#tt-class').addEventListener('change', e=>{ state.adminTimetableClass = e.target.value; renderAdminTimetable(); });
-  $('#tt-save').addEventListener('click', saveTimetable);
-  $('#tt-discard').addEventListener('click', ()=>{ if(confirm('Discard all unsaved timetable changes?')){ state.ttDraft={}; renderAdminTimetable(); } });
   function stage(day, period, subjectId, text){
     const k=ttKey(classId,day,period);
     state.ttDraft[k] = (!subjectId && !text) ? null : {id:k, classId, day, period, subjectId, text};
     const cur=timetableEntry(classId,day,period), d=state.ttDraft[k];
     if((!cur&&!d)||(cur&&d&&cur.subjectId===d.subjectId&&(cur.text||'')===(d.text||''))) delete state.ttDraft[k];
-    bar();
+    ttBar();
   }
   function textBox(day, period){ return document.querySelector('[data-tt-text-day="'+day+'"][data-tt-text-period="'+period+'"]'); }
-  $all('[data-tt-day]').forEach(sel=>sel.addEventListener('change', e=>{
-    const day=sel.dataset.ttDay, period=Number(sel.dataset.ttPeriod), val=e.target.value, tb=textBox(day,period);
-    if(val==='__text__'){ tb.style.display=''; tb.focus(); stage(day,period,'',tb.value.trim()); }
-    else { tb.style.display='none'; tb.value=''; stage(day,period,val,''); }
-  }));
-  $all('[data-tt-text-day]').forEach(tb=>tb.addEventListener('input', ()=>{ stage(tb.dataset.ttTextDay, Number(tb.dataset.ttTextPeriod), '', tb.value.trim()); }));
+  function bindGrid(){
+    $all('[data-tt-day]').forEach(sel=>sel.addEventListener('change', e=>{
+      const day=sel.dataset.ttDay, period=Number(sel.dataset.ttPeriod), val=e.target.value, tb=textBox(day,period);
+      if(val==='__text__'){ tb.style.display=''; tb.focus(); stage(day,period,'',tb.value.trim()); }
+      else { tb.style.display='none'; tb.value=''; stage(day,period,val,''); }
+    }));
+    $all('[data-tt-text-day]').forEach(tb=>tb.addEventListener('input', ()=>{ stage(tb.dataset.ttTextDay, Number(tb.dataset.ttTextPeriod), '', tb.value.trim()); }));
+  }
+  bindGrid();
+  bindPeriodEditor(()=>{ $('#tt-grid').innerHTML=ttGridHtml(classId); bindGrid(); ttBar(); });   // grid follows the period rows live
+  ttBar();
+  $('#tt-class').addEventListener('change', e=>{ state.adminTimetableClass = e.target.value; renderAdminTimetable(); });
+  $('#tt-save').addEventListener('click', saveTimetable);
+  $('#tt-discard').addEventListener('click', ()=>{ if(confirm('Discard all unsaved changes?')){ state.ttDraft={}; state.periodDraft=null; state.periodGen=null; renderAdminTimetable(); } });
 }
 window.addEventListener('beforeunload',e=>{ if(ttDirty()){ e.preventDefault(); e.returnValue=''; } });
 
@@ -2372,7 +2461,7 @@ renderStudentDashboard = function(){
 
 /* ============================= INIT ============================= */
 function initApp(){
-  const ready = ()=>{ populateLoginSelects(); bindLoginEvents(); };
+  const ready = ()=>{ applyPeriodConfig(); applyBrand(); populateLoginSelects(); bindLoginEvents(); };
   if(!BACKEND_ON()){ ready(); return; }          // no database configured: start empty
   getRev().then(r=>{ REV_SEEN=r||{}; }); setInterval(pollRev,5000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRev(); });
   apiGetAll().then(res=>{
