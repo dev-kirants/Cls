@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://firestore.googleapis.com; object-src 'none'; base-uri 'none'; form-action 'none'"/>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://firestore.googleapis.com; object-src 'none'; frame-src blob:; media-src blob:; base-uri 'none'; form-action 'none'"/>
 <meta name="referrer" content="no-referrer"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Attendance Ledger — Student Attendance Management System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
 <style>
   :root{
     --ink:#211316;
@@ -97,6 +98,7 @@
   .side-title{font-weight:600; padding:6px 12px; font-size:0.95rem;}
   .side-sub{color:var(--muted); font-size:0.76rem; padding:0 12px 14px;}
   .sidebar-link{display:block; width:100%; text-align:left; padding:10px 12px; border-radius:var(--radius); color:var(--muted); font-weight:500; font-size:0.88rem; background:none; border:none; cursor:pointer; margin-bottom:2px; white-space:nowrap;}
+  .side-group{font-size:.7rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--gold); padding:14px 12px 6px; border-top:1px solid var(--line); margin-top:10px;}
   .sidebar-link.active{background:var(--primary-tint); color:var(--primary-dark); font-weight:600;}
   .sidebar-link:hover{background:var(--paper);}
   .main{padding:28px; max-width:1180px; margin:0 auto; width:100%;}
@@ -217,6 +219,7 @@
   .file-chip-list{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;}
   .file-chip{display:inline-flex; align-items:center; gap:6px; background:var(--paper); border:1px solid var(--line); border-radius:100px; padding:5px 12px 5px 10px; font-size:0.78rem; text-decoration:none; color:var(--ink);}
   .file-chip:hover{border-color:var(--primary);}
+  button.file-chip{cursor:pointer; font-family:var(--font-sans);}
   textarea{width:100%; padding:9px 12px; border:1px solid var(--line); border-radius:var(--radius); font-size:0.92rem; font-family:var(--font-sans); resize:vertical; min-height:90px; background:var(--surface); color:var(--ink);}
 
   /* ---------- Settings ---------- */
@@ -226,6 +229,38 @@
   .sql-box{background:var(--ink); color:#e8e2d6; padding:16px; border-radius:var(--radius); font-family:monospace; font-size:0.76rem; white-space:pre; overflow-x:auto; max-height:320px; overflow-y:auto;}
 
   /* ---------- Print ---------- */
+
+  /* ---------- File viewer popup ---------- */
+  .fv-backdrop{position:fixed; inset:0; background:rgba(33,19,22,.62); display:none; align-items:center; justify-content:center; padding:20px; z-index:1000;}
+  .fv-backdrop.open{display:flex;}
+  .fv-modal{background:var(--surface); border-radius:var(--radius); width:min(960px,100%); height:min(86vh,760px); display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35); overflow:hidden;}
+  .fv-head{display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--line);}
+  .fv-title{font-family:var(--font-serif); font-weight:600; font-size:1rem; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .fv-meta{font-size:.75rem; color:var(--muted); white-space:nowrap;}
+  .fv-body{flex:1; overflow:auto; background:var(--paper); display:flex; align-items:center; justify-content:center; min-height:0;}
+  .fv-body img{max-width:100%; max-height:100%; object-fit:contain;}
+  .fv-body iframe{width:100%; height:100%; border:0; background:#fff;}
+  .fv-body video{max-width:100%; max-height:100%;}
+  .fv-body pre{align-self:stretch; width:100%; margin:0; padding:18px 20px; white-space:pre-wrap; word-break:break-word; font-size:.82rem; background:#fff; color:var(--ink); text-align:left;}
+  .fv-doc{align-self:stretch; width:100%; padding:24px 32px; background:#fff; text-align:left; line-height:1.6; font-size:.92rem; overflow:auto;}
+  .fv-doc table{border-collapse:collapse; font-size:.8rem;}
+  .fv-doc td,.fv-doc th{border:1px solid var(--line); padding:4px 8px;}
+  .fv-doc img{max-width:100%;}
+  .fv-sheet-name{font-weight:600; margin:14px 0 6px; font-size:.82rem; color:var(--muted);}
+  .fv-msg{text-align:center; padding:32px; max-width:380px; color:var(--muted); font-size:.9rem; line-height:1.55;}
+  .fv-msg .fv-ico{font-size:3rem; display:block; margin-bottom:10px;}
+  .fv-msg b{color:var(--ink);}
+  @media (max-width:600px){ .fv-backdrop{padding:0;} .fv-modal{height:100vh; width:100%; border-radius:0;} .fv-meta{display:none;} }
+
+  /* ---------- Reminder toast ---------- */
+  #toast-host{position:fixed; right:18px; bottom:18px; display:flex; flex-direction:column; gap:10px; z-index:1100; max-width:min(360px,calc(100vw - 36px));}
+  .toast{background:var(--ink); color:#F6F2EA; border-left:4px solid var(--gold); border-radius:var(--radius); padding:12px 14px; font-size:.86rem; line-height:1.45; box-shadow:0 10px 30px rgba(0,0,0,.3);}
+  .toast b{display:block; font-family:var(--font-serif); margin-bottom:2px;}
+  .toast button{margin-top:8px; background:transparent; border:1px solid #6b5d52; color:#F6F2EA; border-radius:var(--radius); padding:3px 10px; cursor:pointer; font-size:.75rem;}
+  .contact-line{font-size:.8rem; line-height:1.5; word-break:break-all;}
+  .contact-line .muted{color:var(--muted);}
+  .form-msg{font-size:.82rem; margin-top:10px;}
+  .form-msg.err{color:var(--danger);} .form-msg.ok{color:var(--success);}
   #print-area{position:absolute; left:-9999px; top:0; width:800px; background:#fff; color:#000; padding:24px; font-family:var(--font-sans);}
   @media print{
     body > *:not(#print-area){display:none !important;}
@@ -241,12 +276,34 @@
   .today-grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr)) !important;} .class-btn{min-height:150px; box-shadow:0 4px 14px rgba(0,0,0,.06);} .class-btn .cb-subject{font-size:1.45rem;}
   .pc-row{display:inline-flex; align-items:center; gap:6px; margin:4px 14px 4px 0;} .hm-table{width:100%; border-collapse:separate; border-spacing:4px; text-align:center;} .hm{border-radius:6px; padding:9px 4px; font-size:.8rem; font-weight:600;}
   .risk-row{display:flex; justify-content:space-between; padding:9px 0; border-bottom:1px solid var(--line);}
+  /* ---------- clearer visuals ---------- */
+  .bar-track{position:relative;} .bar-track::after{content:''; position:absolute; left:75%; top:-2px; bottom:-2px; width:0; border-left:2px dashed var(--gold);}
+  .chart-legend{display:flex; gap:16px; flex-wrap:wrap; font-size:.76rem; color:var(--muted); margin:2px 0 12px;}
+  .chart-legend i{display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:-1px;} .chart-legend i.dash{background:none; border-top:2px dashed var(--gold); height:0; width:16px; border-radius:0; vertical-align:3px;}
+  .chart-note{font-size:.8rem; color:var(--muted); margin:-6px 0 12px; line-height:1.5;}
+  .plan{font-size:.78rem; line-height:1.4; display:inline-block;} .plan-bad{color:var(--danger);} .plan-good{color:var(--success);}
+  .kpi{border-left:4px solid var(--primary);} .kpi.good{border-left-color:var(--success);} .kpi.warn{border-left-color:var(--warning);} .kpi.bad{border-left-color:var(--danger);}
+  .risk-row{align-items:center; gap:12px;} .risk-row small{display:block; color:var(--muted); font-size:.72rem;}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
 
 <div id="print-area"></div>
+<div id="toast-host" aria-live="polite"></div>
+<div class="fv-backdrop" id="fv-backdrop" aria-hidden="true">
+  <div class="fv-modal" role="dialog" aria-modal="true" aria-labelledby="fv-title">
+    <div class="fv-head">
+      <div class="fv-title" id="fv-title">File</div>
+      <span class="fv-meta" id="fv-meta"></span>
+      <button type="button" class="btn btn-primary btn-sm" id="fv-download">⬇ Download</button>
+      <button type="button" class="btn btn-ghost btn-sm" id="fv-close" aria-label="Close">✕ Close</button>
+    </div>
+    <div class="fv-body" id="fv-body"></div>
+  </div>
+</div>
+
 
 <header id="topbar" class="topbar">
   <div class="brand">Attendance Ledger</div>
@@ -407,7 +464,7 @@ function fsDec(key, v){
 // Attached class-note files are too big for a Firestore document (1 MB limit), so only name/size are shared.
 function prepRow(table, row){
   if(table === 'sessions' && row && Array.isArray(row.files)){
-    return Object.assign({}, row, {files: row.files.map(f=>({name:f.name, size:f.size}))});
+    return Object.assign({}, row, {files: row.files.map(f=>({name:f.name, size:f.size, fid:f.fid||'', chunks:f.chunks||0}))});
   }
   return row;
 }
@@ -575,7 +632,7 @@ function todayDayName(){ return JS_DAY_TO_NAME[new Date().getDay()]; }
 /* ============================= HELPERS ============================= */
 function $(sel, ctx){ return (ctx||document).querySelector(sel); }
 function $all(sel, ctx){ return Array.from((ctx||document).querySelectorAll(sel)); }
-function uid(prefix){ return prefix + Math.random().toString(36).slice(2,8); }
+function uid(prefix){ const a=new Uint32Array(2); crypto.getRandomValues(a); return prefix + (a[0].toString(36)+a[1].toString(36)).slice(0,10); }
 
 function statusFor(pct){
   if(pct>=85) return {cls:'success', label:'Good', color:'var(--success)'};
@@ -631,6 +688,26 @@ function overallStatsAll(){
   const present = DB.attendance.filter(r=>r.status==='P').length;
   return {held, present, pct: held ? Math.round((present/held)*1000)/10 : 0};
 }
+
+/* ---- clearer visuals: shared helpers ---- */
+const CLR = {good:'#2F6F4E', watch:'#B8860B', bad:'#A33636', brand:'#7A1E2C', gold:'#B9862E', grid:'#E6E1D5'};
+function clrFor(p){ return p>=85?CLR.good:(p>=75?CLR.watch:CLR.bad); }
+/* draws a dashed "75% required" guide on Chart.js bar/line charts */
+const targetLine = {id:'targetLine', afterDatasetsDraw(ch, a, o){
+  if(!o || o.value==null) return; const {ctx, chartArea:ca, scales} = ch, horiz = ch.options.indexAxis==='y';
+  const px = (horiz?scales.x:scales.y).getPixelForValue(o.value); ctx.save(); ctx.setLineDash([6,4]); ctx.strokeStyle=CLR.gold; ctx.lineWidth=2; ctx.beginPath();
+  if(horiz){ ctx.moveTo(px,ca.top); ctx.lineTo(px,ca.bottom); } else { ctx.moveTo(ca.left,px); ctx.lineTo(ca.right,px); }
+  ctx.stroke(); ctx.fillStyle=CLR.gold; ctx.font='600 11px IBM Plex Sans, sans-serif';
+  if(horiz) ctx.fillText('75% required', px+4, ca.top+11); else ctx.fillText('75% required', ca.right-72, px-5); ctx.restore(); }};
+/* what should this student do about a subject? */
+function planText(held, present){
+  if(!held) return '<span class="sub">No classes yet</span>';
+  const p = present/held;
+  if(p<0.75){ const need = Math.ceil(3*held-4*present); return '<span class="plan plan-bad">Attend next <b>'+need+'</b> class'+(need>1?'es':'')+' in a row to reach 75%</span>'; }
+  const can = Math.floor((4*present-3*held)/3);
+  return '<span class="plan plan-good">'+(can>0?'Can miss <b>'+can+'</b> more class'+(can>1?'es':''):'Do not miss the next class')+' and stay above 75%</span>';
+}
+function legendHtml(){ return '<div class="chart-legend"><span><i style="background:'+CLR.good+'"></i>Good ≥85%</span><span><i style="background:'+CLR.watch+'"></i>Watch 75–84%</span><span><i style="background:'+CLR.bad+'"></i>Critical &lt;75%</span><span><i class="dash"></i>75% required</span></div>'; }
 
 function barListHtml(items){
   return '<div class="bar-list">' + items.map(it=>{
@@ -721,16 +798,145 @@ function printReport(html){
 function sessionKey(subjectId, date, period){ return 'SESS_'+subjectId+'_'+date+'_'+period; }
 function getSession(subjectId, date, period){ return DB.sessions.find(s=>s.id===sessionKey(subjectId,date,period)); }
 
-function saveSession(subjectId, classId, teacherId, date, period, topics, files){
+/* Class-note files are stored in their own 'sessionfiles' collection, split into ~700 KB text chunks
+   (a Firestore document is limited to 1 MB). The session row only keeps name/size/fid/chunks, so loading
+   the class list stays fast; students download the chunks on demand. */
+const FILE_CHUNK = 700000;
+async function uploadSessionFile(f){
+  if(f.fid || !f.dataUrl) return true;                       // already uploaded, or nothing to upload
+  const c = getSupabaseCfg(), fid = uid('F'), parts = [];
+  for(let i=0;i<f.dataUrl.length;i+=FILE_CHUNK) parts.push(f.dataUrl.slice(i, i+FILE_CHUNK));
+  try{
+    for(let i=0;i<parts.length;i++){
+      await fsPost(c, ':commit', {writes:[{update:{name:fsRoot(c)+'/sessionfiles/'+fid+'_'+i,
+        fields:{id:{stringValue:fid+'_'+i}, idx:{integerValue:String(i)}, data:{stringValue:parts[i]}}}}]});
+    }
+  }catch(err){ syncFail(err); return false; }
+  f.fid = fid; f.chunks = parts.length;
+  return true;
+}
+async function saveSession(subjectId, classId, teacherId, date, period, topics, files){
   const id = sessionKey(subjectId, date, period);
+  if(BACKEND_ON()){
+    for(const f of files){ if(!(await uploadSessionFile(f))) return false; }
+  }
   let rec = DB.sessions.find(s=>s.id===id);
   if(rec){ rec.topics=topics; rec.files=files; rec.teacherId=teacherId; rec.classId=classId; }
   else{ rec = {id, subjectId, classId, teacherId, date, period, topics, files}; DB.sessions.push(rec); }
-  syncUpsert('sessions', rec);
-  return rec;
+  if(BACKEND_ON()) return (await syncUpsert('sessions', rec)) !== false;
+  return 'local';
 }
+/* ---- File viewer popup: opens teacher-shared files on the same page, with a Download button ---- */
+const FILE_REG = [];                                   // chips refer to files by index into this list
+function dataUrlToBlob(full, nameHint){
+  const comma = full.indexOf(',');
+  let mime = (full.slice(5, comma).split(';')[0]) || '';
+  const bin = atob(full.slice(comma+1)), bytes = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+  if(!mime || mime==='application/octet-stream') mime = guessMime(nameHint) || mime || 'application/octet-stream';
+  return new Blob([bytes], {type:mime});
+}
+function fileExt(name){ const m = /\.([a-z0-9]+)$/i.exec(name||''); return m ? m[1].toLowerCase() : ''; }
+function guessMime(name){
+  return ({pdf:'application/pdf', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', webp:'image/webp', svg:'image/svg+xml',
+    mp4:'video/mp4', webm:'video/webm', mp3:'audio/mpeg', wav:'audio/wav', txt:'text/plain', csv:'text/csv'})[fileExt(name)] || '';
+}
+async function fetchSessionFileBlob(f){
+  if(f.dataUrl) return dataUrlToBlob(f.dataUrl, f.name);
+  const c = getSupabaseCfg(), pieces = [];
+  for(let i=0;i<f.chunks;i++){
+    const r = await fetch('https://firestore.googleapis.com/v1/'+fsRoot(c)+'/sessionfiles/'+f.fid+'_'+i+'?key='+encodeURIComponent(c.key));
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    pieces.push(((await r.json()).fields||{}).data.stringValue);
+  }
+  return dataUrlToBlob(pieces.join(''), f.name);
+}
+function fileKind(name, mime){
+  const e = fileExt(name);
+  if(/^image\//.test(mime) || ['png','jpg','jpeg','gif','webp','bmp','svg'].includes(e)) return 'image';
+  if(mime==='application/pdf' || e==='pdf') return 'pdf';
+  if(/^video\//.test(mime) || ['mp4','webm','ogv'].includes(e)) return 'video';
+  if(/^audio\//.test(mime) || ['mp3','wav','ogg','m4a'].includes(e)) return 'audio';
+  if(['xlsx','xls','csv'].includes(e)) return 'sheet';
+  if(e==='docx') return 'docx';
+  if(['txt','md','json','log','xml','html','js','css','py','java','c','cpp'].includes(e) || /^text\//.test(mime)) return 'text';
+  return 'other';
+}
+function cleanHtml(dirty){                              // strip anything executable from converted document HTML
+  const doc = new DOMParser().parseFromString(dirty, 'text/html');
+  doc.querySelectorAll('script,iframe,object,embed,style,link,meta,form').forEach(n=>n.remove());
+  doc.querySelectorAll('*').forEach(n=>Array.from(n.attributes).forEach(a=>{
+    if(/^on/i.test(a.name) || (/^(href|src)$/i.test(a.name) && /^\s*javascript:/i.test(a.value))) n.removeAttribute(a.name);
+  }));
+  return doc.body.innerHTML;
+}
+const FV = { url:null, blob:null, name:'', token:0 };
+function fvEls(){ return { bd:$('#fv-backdrop'), body:$('#fv-body'), title:$('#fv-title'), meta:$('#fv-meta'), dl:$('#fv-download') }; }
+function fvMsg(icon, html){ return '<div class="fv-msg"><span class="fv-ico">'+icon+'</span>'+html+'</div>'; }
+function fvSize(n){ return n ? (n>1048576?(n/1048576).toFixed(1)+' MB':Math.max(1,Math.round(n/1024))+' KB') : ''; }
+function closeFileViewer(){
+  const {bd, body} = fvEls(); FV.token++;
+  bd.classList.remove('open'); bd.setAttribute('aria-hidden','true'); body.innerHTML = '';
+  if(FV.url) URL.revokeObjectURL(FV.url); FV.url = FV.blob = null;
+  document.body.style.overflow = '';
+  if(FV.opener && document.contains(FV.opener)) FV.opener.focus();
+}
+async function openFileViewer(f, opener){
+  const {bd, body, title, meta, dl} = fvEls(), token = ++FV.token;
+  FV.opener = opener; FV.name = f.name || 'file'; FV.blob = null;
+  if(FV.url){ URL.revokeObjectURL(FV.url); FV.url = null; }
+  title.textContent = FV.name; meta.textContent = fvSize(f.size); dl.disabled = true;
+  body.innerHTML = fvMsg('⏳', 'Loading…');
+  bd.classList.add('open'); bd.setAttribute('aria-hidden','false'); document.body.style.overflow = 'hidden';
+  $('#fv-close').focus();
+  try{
+    const blob = await fetchSessionFileBlob(f);
+    if(token !== FV.token) return;                      // closed or another file opened meanwhile
+    FV.blob = blob; FV.url = URL.createObjectURL(blob); dl.disabled = false;
+    const kind = fileKind(FV.name, blob.type);
+    if(kind==='image'){ body.innerHTML = ''; const im = new Image(); im.alt = FV.name; im.src = FV.url; body.appendChild(im); }
+    else if(kind==='pdf'){ body.innerHTML = '<iframe title="'+escapeHtml(FV.name)+'" src="'+FV.url+'"></iframe>'; }
+    else if(kind==='video'){ body.innerHTML = '<video controls src="'+FV.url+'"></video>'; }
+    else if(kind==='audio'){ body.innerHTML = '<audio controls src="'+FV.url+'"></audio>'; }
+    else if(kind==='text'){
+      let t = await blob.text(); if(token !== FV.token) return;
+      if(t.length > 200000) t = t.slice(0,200000) + '\n\n… (preview truncated — download for the full file)';
+      body.innerHTML = '<pre>'+escapeHtml(t)+'</pre>';
+    }
+    else if(kind==='sheet' && window.XLSX){
+      const wb = XLSX.read(await blob.arrayBuffer(), {type:'array'}); if(token !== FV.token) return;
+      body.innerHTML = '<div class="fv-doc">'+wb.SheetNames.slice(0,10).map(n=>{
+        const ws = wb.Sheets[n], rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:'', raw:false}).slice(0,500);
+        return '<div class="fv-sheet-name">'+escapeHtml(n)+'</div><div style="overflow:auto"><table>'
+          + rows.map(r=>'<tr>'+r.map(c=>'<td>'+escapeHtml(c)+'</td>').join('')+'</tr>').join('') + '</table></div>';
+      }).join('')+'</div>';
+    }
+    else if(kind==='docx' && window.mammoth){
+      const res = await mammoth.convertToHtml({arrayBuffer: await blob.arrayBuffer()}); if(token !== FV.token) return;
+      body.innerHTML = '<div class="fv-doc">'+cleanHtml(res.value)+'</div>';
+    }
+    else{
+      const e = fileExt(FV.name).toUpperCase();
+      body.innerHTML = fvMsg(['PPT','PPTX'].includes(e)?'📊':'📄',
+        '<b>'+escapeHtml(e ? e+' files' : 'This file type')+' can\u2019t be previewed in the browser.</b><br>Use the Download button above to open it in the right app.');
+    }
+  }catch(err){
+    if(token !== FV.token) return;
+    body.innerHTML = fvMsg('⚠️', '<b>Couldn\u2019t open the file.</b><br>'+escapeHtml(err.message)+'<br>If this says 403, publish the updated Firestore rules from Admin &gt; Settings.');
+  }
+}
+document.addEventListener('click', e=>{
+  const chip = e.target.closest('[data-fref]');
+  if(chip){ const f = FILE_REG[Number(chip.dataset.fref)]; if(f) openFileViewer(f, chip); return; }
+  if(e.target.id==='fv-backdrop' || e.target.closest('#fv-close')){ closeFileViewer(); return; }
+  if(e.target.closest('#fv-download') && FV.url){
+    const a = document.createElement('a'); a.href = FV.url; a.download = FV.name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+});
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && $('#fv-backdrop').classList.contains('open')) closeFileViewer(); });
 
-const MAX_FILE_BYTES = 6 * 1024 * 1024; // 6MB per file, kept modest so sync stays fast
+const MAX_FILE_BYTES = 2 * 1024 * 1024; // 2MB per file (stored as chunks in Firestore)
 function readFilesAsDataUrls(fileList){
   const files = Array.from(fileList || []);
   const oversized = files.filter(f=>f.size > MAX_FILE_BYTES);
@@ -749,9 +955,110 @@ function readFilesAsDataUrls(fileList){
 
 function fileChipListHtml(files){
   if(!files || !files.length) return '';
-  return '<div class="file-chip-list">' + files.map((f,i)=>
-    (f.dataUrl ? '<a class="file-chip" href="'+f.dataUrl+'" download="'+(f.name||'file')+'">📎 '+(f.name||'file')+'</a>' : '<span class="file-chip" title="File was attached on another device">📎 '+(f.name||'file')+' (not shared)</span>')
-  ).join('') + '</div>';
+  return '<div class="file-chip-list">' + files.map((f,i)=>{
+    const nm = escapeHtml(f.name||'file'), kb = f.size ? ' · '+(f.size>1048576?(f.size/1048576).toFixed(1)+' MB':Math.max(1,Math.round(f.size/1024))+' KB') : '';
+    if(f.dataUrl || f.fid){ const ref = FILE_REG.push(f)-1;
+      return '<button type="button" class="file-chip" data-fref="'+ref+'" title="Click to view">📎 '+nm+kb+'</button>'; }
+    return '<span class="file-chip" title="This file was shared before file sharing was enabled. Ask the teacher to attach it again.">📎 '+nm+' (re-upload needed)</span>';
+  }).join('') + '</div>';
+}
+
+
+/* ============================= CONTACT DETAILS (email / phone) ============================= */
+const EMAIL_RE = /^[a-z0-9._%+\-]{1,64}@[a-z0-9\-]+(\.[a-z0-9\-]+)*\.[a-z]{2,}$/i;
+function normEmail(v){ return String(v||'').trim().toLowerCase(); }
+function validEmail(v){ return v.length<=254 && EMAIL_RE.test(v) && !/\.\./.test(v); }
+function normPhone(v){                                   // -> +<country><number>; bare 10-digit numbers are treated as Indian (+91)
+  const p = String(v||'').replace(/[\s\-().]/g,'');
+  if(/^\d{10}$/.test(p)) return '+91'+p;
+  if(/^0\d{10}$/.test(p)) return '+91'+p.slice(1);
+  if(/^91\d{10}$/.test(p)) return '+'+p;
+  return p;
+}
+function validPhone(p){ return /^\+[1-9]\d{9,14}$/.test(p); }
+function contactCellHtml(t){
+  const e = t.email ? '<a href="mailto:'+escapeHtml(t.email)+'">'+escapeHtml(t.email)+'</a>' : '<span class="badge badge-warning">No email</span>';
+  const ph = t.phone ? '<a href="tel:'+escapeHtml(t.phone)+'">'+escapeHtml(t.phone)+'</a>' : '<span class="muted">No phone</span>';
+  const r = Number(t.remindMin)>0 ? 'Reminder '+Number(t.remindMin)+' min before class' : 'Reminders off';
+  return '<div class="contact-line">'+e+'<br>'+ph+'<br><span class="muted">'+r+'</span></div>';
+}
+function remindSelectHtml(id, cur){
+  const v = (cur===undefined||cur===null||cur==='') ? '15' : String(cur);
+  return '<select id="'+id+'">'+[['0','Off'],['10','10 minutes before'],['15','15 minutes before'],['30','30 minutes before'],['60','1 hour before']]
+    .map(o=>'<option value="'+o[0]+'" '+(v===o[0]?'selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
+}
+/* validates and normalises contact fields; returns {error} or {email, phone, remindMin} */
+function readContact(emailEl, phoneEl, remindEl, selfId, requireEmail){
+  const email = normEmail(emailEl.value), phone = normPhone(phoneEl.value);
+  if(requireEmail && !email) return {error:'Email is required — class reminders are sent there.'};
+  if(email && !validEmail(email)) return {error:'Enter a valid email address.'};
+  if(phoneEl.value.trim() && !validPhone(phone)) return {error:'Enter a valid phone number (10 digits, or with country code like +91…).'};
+  if(email && DB.teachers.some(t=>t.id!==selfId && normEmail(t.email)===email)) return {error:'Another teacher already uses this email.'};
+  const rm = String(remindEl.value);
+  if(!['0','10','15','30','60'].includes(rm)) return {error:'Invalid reminder time.'};
+  return {email, phone: phoneEl.value.trim() ? phone : '', remindMin: rm};
+}
+
+/* ---- in-app class reminders (toast + optional browser notification while the page is open) ---- */
+const REMINDED = new Set();
+function showToast(title, body){
+  const host = $('#toast-host'); if(!host) return;
+  const d = document.createElement('div'); d.className = 'toast'; d.setAttribute('role','status');
+  const b = document.createElement('b'); b.textContent = title;
+  const m = document.createElement('div'); m.textContent = body;
+  const x = document.createElement('button'); x.type = 'button'; x.textContent = 'Dismiss'; x.onclick = ()=>d.remove();
+  d.append(b, m, x); host.appendChild(d); setTimeout(()=>d.remove(), 120000);
+}
+function periodStartMin(p){
+  const t = String(PERIOD_TIMES[p]||'').split(/\s*[–-]\s*/)[0], m = /^(\d{1,2}):(\d{2})$/.exec(t.trim());
+  return m ? Number(m[1])*60 + Number(m[2]) : null;
+}
+function checkClassReminders(){
+  if(state.role!=='teacher') return;
+  const teacher = DB.teachers.find(t=>t.id===state.teacherId); if(!teacher) return;
+  const lead = Number(teacher.remindMin===undefined||teacher.remindMin===''?15:teacher.remindMin); if(!(lead>0)) return;
+  if(DB.holidays.some(h=>h.date===todayStr() && h.type==='Holiday')) return;
+  const now = new Date(), nowMin = now.getHours()*60 + now.getMinutes();
+  teacherTodayClasses(teacher).forEach(tt=>{
+    const st = periodStartMin(tt.period); if(st===null) return;
+    const diff = st - nowMin, key = todayStr()+'|'+tt.subjectId+'|'+tt.period;
+    if(diff>0 && diff<=lead && !REMINDED.has(key)){
+      REMINDED.add(key);
+      const su = DB.subjects.find(x=>x.id===tt.subjectId), cls = DB.classes.find(x=>x.id===tt.classId);
+      const title = 'Class in '+diff+' min', body = (su?su.name:'Class')+(cls?' · '+cls.course+' S'+cls.semester+'-'+cls.section:'')+' · Period '+tt.period+' ('+PERIOD_TIMES[tt.period]+')';
+      showToast(title, body);
+      try{ if('Notification' in window && Notification.permission==='granted') new Notification(title, {body}); }catch(e){}
+    }
+  });
+}
+setInterval(checkClassReminders, 30000);
+
+function teacherProfileCardHtml(t){
+  return '<div class="card" id="profile-card"><h3>My contact &amp; reminders</h3>'
+    + '<p class="sub" style="margin-bottom:12px;">Class reminders are emailed to you. Changing these details needs your password.</p>'
+    + '<div class="form-grid">'
+    + '<div class="field"><label>Email</label><input id="p-email" type="email" maxlength="254" autocomplete="email" value="'+escapeHtml(t.email||'')+'"/></div>'
+    + '<div class="field"><label>Phone number</label><input id="p-phone" type="tel" maxlength="20" autocomplete="tel" placeholder="+91 98765 43210" value="'+escapeHtml(t.phone||'')+'"/></div>'
+    + '<div class="field"><label>Remind me</label>'+remindSelectHtml('p-remind', t.remindMin)+'</div>'
+    + '<div class="field"><label>Current password</label><input id="p-pass" type="password" autocomplete="current-password"/></div>'
+    + '</div><div class="btn-row"><button class="btn btn-primary" id="p-save">Save contact details</button>'
+    + (('Notification' in window && Notification.permission==='default') ? '<button class="btn btn-ghost" id="p-notify">Enable browser alerts</button>' : '')
+    + '</div><div class="form-msg" id="p-msg" role="alert"></div></div>';
+}
+function bindTeacherProfile(t){
+  const msg = (txt, ok)=>{ const m=$('#p-msg'); m.textContent = txt; m.className = 'form-msg '+(ok?'ok':'err'); };
+  const nb = $('#p-notify'); if(nb) nb.addEventListener('click', ()=>{ Notification.requestPermission().then(()=>renderTeacherDashboard(t)); });
+  $('#p-save').addEventListener('click', async ()=>{
+    if(lockLeft()>0){ msg('Too many wrong passwords. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
+    const c = readContact($('#p-email'), $('#p-phone'), $('#p-remind'), t.id, true);
+    if(c.error){ msg(c.error); return; }
+    const pw = $('#p-pass').value;
+    if(!pw || !t.passHash || (await hashPw(pw, t.id)) !== t.passHash){ failLogin(); msg('Password is incorrect.'); $('#p-pass').value=''; return; }
+    okLogin();
+    t.email = c.email; t.phone = c.phone; t.remindMin = c.remindMin;
+    syncUpsert('teachers', t);
+    $('#p-pass').value=''; msg('Saved.', true);
+  });
 }
 
 /* ============================= TIMETABLE HELPERS ============================= */
@@ -842,7 +1149,7 @@ const state = {
   teacherCalMonth:null, teacherCalSubject:'all', teacherCalDate:null,
   adminCalMonth:null, adminCalClass:'all', adminCalDate:null,
   adminTimetableClass:null, holidayForm:null, ttDraft:{}, ttSaved:null, ttF:{classId:'all',day:'all',period:'all',mine:false}, tF:{q:'',status:'all',classId:'all'},
-  sessionDraft:{topics:'', files:[]}
+  sessionDraft:{topics:null, files:[]}
 };
 
 /* ============================= LOGIN / NAV ============================= */
@@ -979,24 +1286,33 @@ function renderStudentTimetable(){
 
 function renderStudentContentTab(){
   const student = DB.students.find(s=>s.id===state.studentId);
-  const subjectIds = new Set(DB.subjects.filter(su=>su.classId===student.classId).map(s=>s.id));
-  const sessions = DB.sessions.filter(s=>subjectIds.has(s.subjectId) && (s.topics || (s.files&&s.files.length)))
-    .slice().sort((a,b)=> a.date<b.date?1:-1);
+  const subjects = DB.subjects.filter(su=>su.classId===student.classId);
+  const subjectIds = new Set(subjects.map(s=>s.id));
+  const all = DB.sessions.filter(s=>subjectIds.has(s.subjectId) && (s.topics || (s.files&&s.files.length)))
+    .slice().sort((a,b)=> a.date<b.date?1:(a.date>b.date?-1:b.period-a.period));
+  const sel = state.contentSubject && subjectIds.has(state.contentSubject) ? state.contentSubject : 'all';
+  const sessions = sel==='all' ? all : all.filter(s=>s.subjectId===sel);
+  const cnt = id=>all.filter(s=>s.subjectId===id).length;
 
-  let html = '<div class="page-head"><div><h1>My Content</h1><div class="sub">Topics covered and files shared by your faculty, class by class.</div></div></div>';
+  let html = '<div class="page-head"><div><h1>My Content</h1><div class="sub">Topics covered and files shared by your faculty, newest first. Updates automatically.</div></div></div>';
+  html += '<div class="day-chips"><button class="day-chip '+(sel==='all'?'on':'')+'" data-csub="all">All subjects ('+all.length+')</button>'
+    + subjects.map(su=>'<button class="day-chip '+(sel===su.id?'on':'')+'" data-csub="'+su.id+'">'+escapeHtml(su.name)+' ('+cnt(su.id)+')</button>').join('')+'</div>';
   if(!sessions.length){
-    html += '<div class="card"><p class="empty">Nothing has been shared yet. Notes and files your faculty add after class will appear here.</p></div>';
+    html += '<div class="card"><p class="empty">Nothing has been shared yet'+(sel==='all'?'':' for this subject')+'. Notes and files your faculty add after class will appear here.</p></div>';
   } else {
     html += sessions.map(s=>{
       const su = DB.subjects.find(x=>x.id===s.subjectId);
       const t = su ? DB.teachers.find(x=>x.id===su.teacherId) : null;
-      return '<div class="session-card"><div class="sc-head"><span class="sc-title">'+(su?su.name:'—')+' · Period '+s.period+'</span><span class="sc-date">'+s.date+(t?' · '+t.name:'')+'</span></div>'
+      const isNew = s.date >= (()=>{ const d=new Date(); d.setDate(d.getDate()-2); return d.toLocaleDateString('en-CA'); })();
+      return '<div class="session-card"><div class="sc-head"><span class="sc-title">'+escapeHtml(su?su.name:'—')+(isNew?' <span class="badge badge-success">New</span>':'')+'</span>'
+        + '<span class="sc-date">'+s.date+' · Period '+s.period+(t?' · '+escapeHtml(t.name):'')+'</span></div>'
         + (s.topics ? '<div class="sc-topics">'+escapeHtml(s.topics)+'</div>' : '<p class="sub" style="margin:6px 0;">No written notes for this class.</p>')
         + fileChipListHtml(s.files)
         + '</div>';
     }).join('');
   }
   $('#student-content').innerHTML = html;
+  $all('[data-csub]').forEach(b=>b.addEventListener('click', ()=>{ state.contentSubject = b.dataset.csub; renderStudentContentTab(); }));
 }
 
 function escapeHtml(str){
@@ -1048,7 +1364,7 @@ function timetableGridHtml(classId, highlightTeacherId, opts){
       if(opts.mine&&highlightTeacherId&&!(su&&su.teacherId===highlightTeacherId)){ rows+='<td><div class="tt-empty-cell">—</div></td>'; return; }
       if(su){
         const dim = highlightTeacherId && su.teacherId!==highlightTeacherId;
-        rows += '<td><div class="tt-cell-view" style="'+(dim?'opacity:.35;':'')+'"><span class="tt-sub">'+su.name+'</span>'+(t?'<span class="tt-teach">'+t.name+'</span>':'')+'</div></td>';
+        rows += '<td><div class="tt-cell-view" style="'+(dim?'opacity:.35;':'')+'"><span class="tt-sub">'+escapeHtml(su.name)+'</span>'+(t?'<span class="tt-teach">'+escapeHtml(t.name)+'</span>':'')+'</div></td>';
       } else if(entry && entry.text){
         const dim = highlightTeacherId ? 'opacity:.35;' : '';
         rows += '<td><div class="tt-cell-view" style="'+dim+'"><span class="tt-sub">'+escapeHtml(entry.text)+'</span></div></td>';
@@ -1084,21 +1400,29 @@ function renderStudentDashboard(){
     + '</div>';
 
   html += '<div class="grid-2">'
-    + '<div class="card"><h3>Overall attendance</h3>' + donutHtml(overall.pct, 'Present · '+overall.present, 'Absent · '+overall.absent) + '</div>'
-    + '<div class="card"><h3>Monthly trend</h3>' + trendHtml(trend) + '</div>'
+    + '<div class="card"><h3>Overall attendance</h3><p class="chart-note">Share of all your classes you attended. You need at least 75%.</p>' + donutHtml(overall.pct, 'Present · '+overall.present+' classes', 'Absent · '+overall.absent+' classes') + '</div>'
+    + '<div class="card"><h3>Month-by-month trend</h3><p class="chart-note">Is your attendance getting better or worse?</p>' + cv('ch-trend',190) + '</div>'
     + '</div>';
 
-  html += '<div class="card"><h3>Subject-wise attendance</h3><table class="table"><thead><tr><th>Subject</th><th>Classes held</th><th>Present</th><th>Absent</th><th>Percentage</th><th></th></tr></thead><tbody>'
+  html += '<div class="card"><h3>Which subjects need attention?</h3><p class="chart-note">Each bar is one subject. The dashed line is the 75% you need.</p>' + legendHtml() + cv('ch-stu', Math.max(150, overall.subjects.length*44+40)) + '</div>';
+
+  html += '<div class="card"><h3>Subject-wise details</h3><table class="table"><thead><tr><th>Subject</th><th>Held</th><th>Present</th><th>Absent</th><th>Percentage</th><th>What to do</th></tr></thead><tbody>'
     + overall.subjects.map(su=>{
         const st = subjectStatsForStudent(student.id, su.id);
         const sInfo = statusFor(st.pct);
-        return '<tr><td>'+su.name+'</td><td>'+st.held+'</td><td>'+st.present+'</td><td>'+st.absent+'</td>'
-          + '<td><div class="pct-cell"><span>'+st.pct+'%</span><div class="bar-track"><div class="bar-fill" style="width:'+st.pct+'%;background:'+sInfo.color+'"></div></div></div></td>'
-          + '<td><span class="badge badge-'+sInfo.cls+'">'+sInfo.label+'</span></td></tr>';
+        return '<tr><td>'+escapeHtml(su.name)+'</td><td>'+st.held+'</td><td>'+st.present+'</td><td>'+st.absent+'</td>'
+          + '<td><div class="pct-cell"><span>'+st.pct+'% <span class="badge badge-'+sInfo.cls+'">'+sInfo.label+'</span></span><div class="bar-track"><div class="bar-fill" style="width:'+st.pct+'%;background:'+sInfo.color+'"></div></div></div></td>'
+          + '<td>'+planText(st.held, st.present)+'</td></tr>';
       }).join('')
     + '</tbody></table></div>';
 
   $('#student-content').innerHTML = html;
+  if(!window.Chart){ return; }
+  new Chart($('#ch-trend'), {type:'line', data:{labels:trend.map(m=>m.name.slice(0,3)), datasets:[{label:'Attendance %', data:trend.map(m=>m.pct), borderColor:CLR.brand, backgroundColor:'rgba(122,30,44,.12)', fill:true, tension:.3, pointRadius:5, pointBackgroundColor:trend.map(m=>clrFor(m.pct))}]},
+    options:{maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}}, scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}, grid:{color:CLR.grid}}, x:{grid:{display:false}}}}, plugins:[targetLine]});
+  const subs = overall.subjects, pcs = subs.map(su=>subjectStatsForStudent(student.id, su.id).pct);
+  new Chart($('#ch-stu'), {type:'bar', data:{labels:subs.map(su=>su.name), datasets:[{label:'Attendance %', data:pcs, backgroundColor:pcs.map(clrFor), borderRadius:4, barThickness:22}]},
+    options:{indexAxis:'y', maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}, tooltip:{callbacks:{label:c=>c.parsed.x+'% attendance'}}}, scales:{x:{min:0,max:100,ticks:{callback:v=>v+'%'}, grid:{color:CLR.grid}}, y:{grid:{display:false}}}}, plugins:[targetLine]});
 }
 
 function studentDayStats(studentId, dateStr){
@@ -1138,7 +1462,7 @@ function studentCalDetailHtml(student, dateStr){
   return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' classes attended ('+day.pct+'%)</h3>'
     + '<div class="cal-detail-list">' + day.recs.map(r=>{
         const su = DB.subjects.find(x=>x.id===r.subjectId);
-        return '<div class="cal-detail-row"><span>Period '+r.period+' · '+(su?su.name:'—')+'</span>'
+        return '<div class="cal-detail-row"><span>Period '+r.period+' · '+(su?escapeHtml(su.name):'—')+'</span>'
           + '<span class="badge badge-'+(r.status==='P'?'success':'danger')+'">'+(r.status==='P'?'Present':'Absent')+'</span></div>';
       }).join('') + '</div>';
 }
@@ -1147,7 +1471,7 @@ function studentCalDetailHtml(student, dateStr){
 function renderTeacherSidebar(){
   const teacher = DB.teachers.find(t=>t.id===state.teacherId);
   const tabs = [['dashboard','Dashboard'],['timetable','My Timetable'],['mark','Mark attendance'],['calendar','Calendar'],['records','Attendance records'],['content','My Content'],['reports','Reports']];
-  $('#teacher-sidebar').innerHTML = '<div class="side-title">'+teacher.name+'</div><div class="side-sub">'+teacher.teacherId+'</div>'
+  $('#teacher-sidebar').innerHTML = '<div class="side-title">'+escapeHtml(teacher.name)+'</div><div class="side-sub">'+escapeHtml(teacher.teacherId)+'</div>'
     + tabs.map(t=>'<button class="sidebar-link '+(state.teacherTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#teacher-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
     state.teacherTab = btn.dataset.tab;
@@ -1182,7 +1506,7 @@ function openClassFromButton(subjectId, period, date){
 function renderTeacherDashboard(teacher){
   const subjects = DB.subjects.filter(su=>su.teacherId===teacher.id);
   const classIds = new Set(subjects.map(s=>s.classId));
-  let html = '<div class="page-head"><div><h1>Welcome back, '+teacher.name.split(' ')[0]+'</h1><div class="sub">'+subjects.length+' subjects · '+classIds.size+' classes</div></div></div>';
+  let html = '<div class="page-head"><div><h1>Welcome back, '+escapeHtml(teacher.name.split(' ')[0])+'</h1><div class="sub">'+subjects.length+' subjects · '+classIds.size+' classes</div></div></div>';
   html += holidayTodayHtml();
 
   const day = state.teacherDay || (WEEKDAYS.indexOf(todayDayName())>-1 ? todayDayName() : 'Mon'), dDate = dateForDay(day);
@@ -1196,7 +1520,7 @@ function renderTeacherDashboard(teacher){
       const already = DB.attendance.some(a=>a.subjectId===tt.subjectId && a.date===dDate && a.period===tt.period);
       return '<button class="class-btn '+(already?'cb-done':'')+'" data-open-subject="'+tt.subjectId+'" data-open-period="'+tt.period+'" data-open-date="'+dDate+'">'
         + '<span class="cb-time">Period '+tt.period+' · '+(PERIOD_TIMES[tt.period]||'')+'</span>'
-        + '<span class="cb-subject">'+(su?su.name:'—')+'</span>'
+        + '<span class="cb-subject">'+(su?escapeHtml(su.name):'—')+'</span>'
         + '<span class="cb-meta">'+(cls?cls.course+' S'+cls.semester+'-'+cls.section:'')+(already?' · Marked ✓':' · Tap to mark attendance')+'</span></button>';
     }).join('') + '</div>';
   }
@@ -1214,11 +1538,14 @@ function renderTeacherDashboard(teacher){
         const cls = DB.classes.find(c=>c.id===su.classId);
         const stats = subjectOverallStats(su.id);
         const info = statusFor(stats.pct);
-        return '<tr><td>'+su.code+'</td><td>'+su.name+'</td><td>'+cls.course+' S'+cls.semester+'-'+cls.section+'</td><td><span class="badge badge-'+info.cls+'">'+stats.pct+'%</span></td></tr>';
+        return '<tr><td>'+escapeHtml(su.code)+'</td><td>'+escapeHtml(su.name)+'</td><td>'+cls.course+' S'+cls.semester+'-'+cls.section+'</td><td><span class="badge badge-'+info.cls+'">'+stats.pct+'%</span></td></tr>';
       }).join('') || '<tr><td colspan="4" class="empty">No subjects assigned yet.</td></tr>'
     + '</tbody></table></div>';
 
+  html += teacherProfileCardHtml(teacher);
   $('#teacher-content').innerHTML = html;
+  bindTeacherProfile(teacher);
+  checkClassReminders();
   $all('[data-open-subject]').forEach(btn=>btn.addEventListener('click', ()=>{
     openClassFromButton(btn.dataset.openSubject, Number(btn.dataset.openPeriod), btn.dataset.openDate);
   }));
@@ -1295,7 +1622,7 @@ function renderTeacherMark(teacher){
   }
 
   html += '<div class="card"><div class="form-row">'
-    + '<div class="field"><label>Subject</label><select id="mark-subject">' + subjects.map(su=>'<option value="'+su.id+'" '+(su.id===state.markSubject?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Subject</label><select id="mark-subject">' + subjects.map(su=>'<option value="'+su.id+'" '+(su.id===state.markSubject?'selected':'')+'>'+escapeHtml(su.name)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Date</label><input type="date" id="mark-date" value="'+state.markDate+'"/></div>'
     + '<div class="field"><label>Period</label><select id="mark-period">' + PERIODS.map(p=>'<option value="'+p+'" '+(p===state.markPeriod?'selected':'')+'>Period '+p+' · '+PERIOD_TIMES[p]+'</option>').join('') + '</select></div>'
     + '</div><button class="btn btn-ghost" id="load-students-btn">Load class list</button></div>';
@@ -1308,35 +1635,37 @@ function renderTeacherMark(teacher){
       + '<table class="table"><thead><tr><th>Reg. no.</th><th>Student</th><th>Status</th></tr></thead><tbody>'
       + students.map(s=>{
           const status = state.markDraft[s.id] || 'P';
-          return '<tr><td>'+s.regNo+'</td><td>'+s.name+'</td><td><div class="toggle-group" data-student="'+s.id+'">'
+          return '<tr><td>'+escapeHtml(s.regNo)+'</td><td>'+escapeHtml(s.name)+'</td><td><div class="toggle-group" data-student="'+s.id+'">'
             + '<button class="toggle-btn '+(status==='P'?'active-present':'')+'" data-status="P">Present</button>'
             + '<button class="toggle-btn '+(status==='A'?'active-absent':'')+'" data-status="A">Absent</button>'
             + '</div></td></tr>';
         }).join('')
       + '</tbody></table><button class="btn btn-primary" id="save-attendance-btn" style="margin-top:16px;">Save attendance</button><span id="save-confirm" class="save-confirm"></span></div>';
+  }
 
-    // Class notes: topics covered + files, saved against this exact subject/date/period, visible to students.
+  // Class notes: topics covered + files, saved against this exact subject/date/period, visible to students.
+  {
     const existingSession = getSession(state.markSubject, state.markDate, state.markPeriod);
-    const draftTopics = state.sessionDraft.topics || (existingSession ? existingSession.topics : '') || '';
-    const draftFiles = state.sessionDraft.files.length ? state.sessionDraft.files : (existingSession ? existingSession.files : []) || [];
-    html += '<div class="card"><h3>Class notes</h3><p class="sub" style="margin-bottom:12px;">What did you cover in this class? Students in '+subject.name+' will see this along with any files you attach.</p>'
+    const draftTopics = state.sessionDraft.topics!==null ? state.sessionDraft.topics : ((existingSession && existingSession.topics) || '');
+    const savedFiles = (existingSession && existingSession.files) || [];
+    html += '<div class="card"><h3>Class notes &amp; files for students</h3><p class="sub" style="margin-bottom:12px;">Notes for <b>'+escapeHtml(subject.name)+'</b> · '+state.markDate+' · Period '+state.markPeriod+'. Students of this class see them under <b>My Content</b> within a few seconds of saving. This is saved separately from attendance.'+(existingSession?' <span class="badge badge-success">Already shared</span>':'')+'</p>'
       + '<div class="field"><label>Topics covered</label><textarea id="session-topics" placeholder="Topics covered in this class">'+escapeHtml(draftTopics)+'</textarea></div>'
-      + '<div class="field"><label>Attach files (slides, notes, worksheets)</label><input type="file" id="session-files" multiple/></div>'
-      + fileChipListHtml(draftFiles)
-      + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="save-session-btn">Save class notes</button><span id="session-confirm" class="save-confirm"></span></div>'
+      + '<div class="field"><label>Attach files (slides, notes, worksheets) · max 2 MB each</label><input type="file" id="session-files" multiple/></div>'
+      + (savedFiles.length?'<div class="sub">Already shared:</div>'+fileChipListHtml(savedFiles):'')
+      + (state.sessionDraft.files.length?'<div class="sub" style="margin-top:8px;">Ready to upload (press Save):</div>'+fileChipListHtml(state.sessionDraft.files):'')
+      + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="save-session-btn">Save &amp; share with students</button><span id="session-confirm" class="save-confirm"></span></div>'
       + '</div>';
   }
 
   $('#teacher-content').innerHTML = html;
 
-  $('#mark-subject').addEventListener('change', e=>{ state.markSubject=e.target.value; state.markLoaded=false; state.markDraft={}; state.sessionDraft={topics:'',files:[]}; renderTeacherMark(teacher); });
-  $('#mark-date').addEventListener('change', e=>{ state.markDate=e.target.value; state.sessionDraft={topics:'',files:[]}; });
-  $('#mark-period').addEventListener('change', e=>{ state.markPeriod=Number(e.target.value); state.sessionDraft={topics:'',files:[]}; });
+  $('#mark-subject').addEventListener('change', e=>{ state.markSubject=e.target.value; state.markLoaded=false; state.markDraft={}; state.sessionDraft={topics:null,files:[]}; renderTeacherMark(teacher); });
+  $('#mark-date').addEventListener('change', e=>{ state.markDate=e.target.value; state.sessionDraft={topics:null,files:[]}; renderTeacherMark(teacher); });
+  $('#mark-period').addEventListener('change', e=>{ state.markPeriod=Number(e.target.value); state.sessionDraft={topics:null,files:[]}; renderTeacherMark(teacher); });
   $('#load-students-btn').addEventListener('click', ()=>{
     state.markLoaded = true;
     state.markDraft = {};
     students.forEach(s=>state.markDraft[s.id]='P');
-    state.sessionDraft = {topics:'', files:[]};
     renderTeacherMark(teacher);
   });
 
@@ -1371,26 +1700,33 @@ function renderTeacherMark(teacher){
       if(b2) b2.disabled = false;
       if(m2) m2.textContent = ok===false ? 'NOT saved to the database - see the red message and press Save again.' : 'Saved '+n+' records for '+date+'. Students and faculty see it within a few seconds.';
     });
-
-    $('#session-topics').addEventListener('input', e=>{ state.sessionDraft.topics = e.target.value; });
-    $('#session-files').addEventListener('change', e=>{
-      $('#session-confirm').textContent = 'Reading files…';
-      readFilesAsDataUrls(e.target.files).then(({files, oversized})=>{
-        state.sessionDraft.files = (state.sessionDraft.files||[]).concat(files);
-        if(oversized.length) alert('Skipped (too large, 6MB max): '+oversized.join(', '));
-        renderTeacherMark(teacher);
-      });
-    });
-    $('#save-session-btn').addEventListener('click', ()=>{
-      const date = state.markDate || todayStr();
-      const period = state.markPeriod || 1;
-      const existingSession = getSession(state.markSubject, date, period);
-      const files = state.sessionDraft.files.length ? state.sessionDraft.files : (existingSession ? existingSession.files : []) || [];
-      const topics = $('#session-topics').value;
-      saveSession(state.markSubject, subject.classId, teacher.id, date, period, topics, files);
-      $('#session-confirm').textContent = 'Saved — visible to students now.';
-    });
   }
+
+  $('#session-topics').addEventListener('input', e=>{ state.sessionDraft.topics = e.target.value; });
+  $('#session-files').addEventListener('change', e=>{
+    $('#session-confirm').textContent = 'Reading files…';
+    readFilesAsDataUrls(e.target.files).then(({files, oversized})=>{
+      state.sessionDraft.files = (state.sessionDraft.files||[]).concat(files);
+      if(oversized.length) alert('Skipped (too large, 2 MB max): '+oversized.join(', '));
+      renderTeacherMark(teacher);
+    });
+  });
+  $('#save-session-btn').addEventListener('click', async ()=>{
+    const date = state.markDate || todayStr(), period = state.markPeriod || 1;
+    const existingSession = getSession(state.markSubject, date, period);
+    const files = ((existingSession && existingSession.files) || []).concat(state.sessionDraft.files);
+    const topics = $('#session-topics').value.trim();
+    const msg = $('#session-confirm'), btn = $('#save-session-btn');
+    if(!topics && !files.length){ msg.textContent = 'Write the topics covered or attach a file first.'; return; }
+    btn.disabled = true; msg.textContent = files.some(f=>f.dataUrl&&!f.fid) ? 'Uploading files…' : 'Saving…';
+    const res = await saveSession(state.markSubject, subject.classId, teacher.id, date, period, topics, files);
+    btn.disabled = false;
+    if(res===false){ msg.style.color='var(--danger)'; msg.textContent = 'NOT saved - see the red message and press Save again.'; return; }
+    state.sessionDraft = {topics:null, files:[]};
+    if(res==='local'){ msg.textContent = 'Saved on this device only - not connected to the database, so students cannot see it.'; return; }
+    renderTeacherMark(teacher);
+    const m2 = $('#session-confirm'); if(m2) m2.textContent = 'Saved - students can see it now.';
+  });
 }
 
 function teacherDayStats(teacher, subjectFilter, dateStr){
@@ -1416,7 +1752,7 @@ function renderTeacherCalendar(teacher){
 
   html += '<div class="card"><div class="cal-toolbar">'
     + '<div class="field" style="margin:0;min-width:180px;"><label>Month</label><select id="tcal-month">' + monthsData.map(mo=>'<option value="'+mo.prefix+'" '+(mo.prefix===m?'selected':'')+'>'+mo.name+' '+mo.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
-    + '<div class="field" style="margin:0;min-width:200px;"><label>Subject</label><select id="tcal-subject"><option value="all">All subjects</option>' + subjects.map(su=>'<option value="'+su.id+'" '+(state.teacherCalSubject===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
+    + '<div class="field" style="margin:0;min-width:200px;"><label>Subject</label><select id="tcal-subject"><option value="all">All subjects</option>' + subjects.map(su=>'<option value="'+su.id+'" '+(state.teacherCalSubject===su.id?'selected':'')+'>'+escapeHtml(su.name)+'</option>').join('') + '</select></div>'
     + '</div>'
     + calendarHtml(m, d=>teacherDayStats(teacher, state.teacherCalSubject, d), state.teacherCalDate)
     + '</div>';
@@ -1440,7 +1776,7 @@ function renderTeacherCalendar(teacher){
       + '<div class="cal-detail-list">' + day.recs.map(r=>{
           const s = DB.students.find(x=>x.id===r.studentId);
           const su = DB.subjects.find(x=>x.id===r.subjectId);
-          return '<div class="cal-detail-row"><span>'+(s?s.name:'—')+' · Period '+r.period+' · '+(su?su.name:'—')+'</span>'
+          return '<div class="cal-detail-row"><span>'+(s?s.name:'—')+' · Period '+r.period+' · '+(su?escapeHtml(su.name):'—')+'</span>'
             + '<span class="badge badge-'+(r.status==='P'?'success':'danger')+'">'+(r.status==='P'?'Present':'Absent')+'</span></div>';
         }).join('') + '</div>';
   }
@@ -1451,7 +1787,7 @@ function renderTeacherRecords(teacher){
   if(state.recFilters.period!=='all' && Number(state.recFilters.period)>PERIODS.length) state.recFilters.period='all';
   let html = '<div class="page-head"><div><h1>Attendance records</h1><div class="sub">Review or correct previously marked attendance.</div></div></div>';
   html += '<div class="card"><div class="form-row">'
-    + '<div class="field"><label>Subject</label><select id="rec-subject"><option value="all">All subjects</option>' + subjects.map(su=>'<option value="'+su.id+'" '+(state.recFilters.subject===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Subject</label><select id="rec-subject"><option value="all">All subjects</option>' + subjects.map(su=>'<option value="'+su.id+'" '+(state.recFilters.subject===su.id?'selected':'')+'>'+escapeHtml(su.name)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Month</label><select id="rec-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(state.recFilters.month===m.prefix?'selected':'')+'>'+m.name+' '+m.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Period</label><select id="rec-period"><option value="all">All periods</option>' + PERIODS.map(p=>'<option value="'+p+'" '+(String(state.recFilters.period)===String(p)?'selected':'')+'>Period '+p+' · '+PERIOD_TIMES[p]+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Day</label><div class="btn-row" style="flex-wrap:nowrap;gap:6px;"><input type="date" id="rec-date" value="'+state.recFilters.date+'"/><button class="btn btn-ghost btn-sm" id="rec-date-clear" type="button">Clear</button></div></div>'
@@ -1487,7 +1823,7 @@ function renderRecResults(teacher){
     + (recs.map(r=>{
         const s = DB.students.find(st=>st.id===r.studentId);
         const su = DB.subjects.find(x=>x.id===r.subjectId);
-        return '<tr><td>'+r.date+'</td><td>P'+r.period+(PERIOD_TIMES[r.period]?'<div class="tt-period-time">'+PERIOD_TIMES[r.period]+'</div>':'')+'</td><td>'+su.name+'</td><td>'+s.regNo+'</td><td>'+s.name+'</td>'
+        return '<tr><td>'+r.date+'</td><td>P'+r.period+(PERIOD_TIMES[r.period]?'<div class="tt-period-time">'+PERIOD_TIMES[r.period]+'</div>':'')+'</td><td>'+escapeHtml(su.name)+'</td><td>'+escapeHtml(s.regNo)+'</td><td>'+escapeHtml(s.name)+'</td>'
           + '<td><span class="badge badge-'+(r.status==='P'?'success':'danger')+'">'+(r.status==='P'?'Present':'Absent')+'</span></td>'
           + '<td><button class="btn btn-ghost btn-sm" data-flip="'+r.id+'">Flip</button></td></tr>';
       }).join('') || '<tr><td colspan="7" class="empty">No records match these filters.</td></tr>')
@@ -1534,7 +1870,7 @@ function renderTeacherReports(teacher){
   }
 
   html += '<div class="card"><div class="form-row">'
-    + '<div class="field"><label>Subject</label><select id="report-subject">' + subjects.map(su=>'<option value="'+su.id+'" '+(su.id===state.reportSubject?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Subject</label><select id="report-subject">' + subjects.map(su=>'<option value="'+su.id+'" '+(su.id===state.reportSubject?'selected':'')+'>'+escapeHtml(su.name)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Month</label><select id="report-month">' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(m.prefix===state.reportMonth?'selected':'')+'>'+m.name+' '+m.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
     + '</div><div class="btn-row"><button class="btn btn-primary" id="export-csv-btn">Download as Excel (CSV)</button><button class="btn btn-ghost" id="print-report-btn">Print / save as PDF</button></div></div>';
 
@@ -1554,7 +1890,7 @@ function renderTeacherReports(teacher){
     const html2 = '<h2 style="font-family:\'Source Serif 4\',serif;margin-bottom:2px;">Attendance Ledger College</h2>'
       + '<div style="color:#555;margin-bottom:16px;">'+cls.course+' · Semester '+cls.semester+' · Section '+cls.section+'</div>'
       + '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-      + '<tr><td><strong>Subject:</strong> '+subject.name+' ('+subject.code+')</td><td><strong>Teacher:</strong> '+teacher.name+'</td></tr>'
+      + '<tr><td><strong>Subject:</strong> '+subject.name+' ('+subject.code+')</td><td><strong>Teacher:</strong> '+escapeHtml(teacher.name)+'</td></tr>'
       + '<tr><td><strong>Month:</strong> '+month.name+' '+month.prefix.slice(0,4)+'</td><td><strong>Generated:</strong> '+new Date().toDateString()+'</td></tr>'
       + '</table>'
       + '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:16px;">'
@@ -1567,9 +1903,9 @@ function renderTeacherReports(teacher){
 
 /* ============================= ADMIN DASHBOARD ============================= */
 function renderAdminSidebar(){
-  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['timetable','Timetable'],['holidays','Holidays'],['attendance','Attendance'],['calendar','Calendar'],['analytics','Analytics'],['settings','Settings']];
+  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['timetable','Timetable'],['holidays','Holidays'],['attendance','Attendance'],['calendar','Calendar'],['analytics','Analytics'],['@View only'],['details','Check Details'],['@Notifications'],['reminders','Email Reminders'],['@System'],['settings','Settings']];
   $('#admin-sidebar').innerHTML = '<div class="side-title">Administrator</div><div class="side-sub">Full access</div>'
-    + tabs.map(t=>'<button class="sidebar-link '+(state.adminTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
+    + tabs.map(t=>t[0].charAt(0)==='@' ? '<div class="side-group">'+t[0].slice(1)+'</div>' : '<button class="sidebar-link '+(state.adminTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#admin-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
     state.adminTab = btn.dataset.tab;
     state.studentForm=null; state.teacherForm=null; state.subjectForm=null; state.classForm=null; state.holidayForm=null;
@@ -1584,7 +1920,8 @@ function renderAdminContent(){
     overview:renderAdminOverview, students:renderAdminStudents, teachers:renderAdminTeachers,
     subjects:renderAdminSubjects, classes:renderAdminClasses, attendance:renderAdminAttendance,
     calendar:renderAdminCalendar, analytics:renderAdminAnalytics,
-    timetable:renderAdminTimetable, holidays:renderAdminHolidays, settings:renderAdminSettings
+    timetable:renderAdminTimetable, holidays:renderAdminHolidays, settings:renderAdminSettings,
+    details:renderAdminDetails, reminders:renderAdminReminders
   };
   map[state.adminTab]();
 }
@@ -1727,7 +2064,7 @@ function renderAdminHolidays(){
    students, attendance; timetable/holidays/sessions optional) and loads it into the app. */
 const IMPORT_SCHEMA = {
   classes:['id','course','semester','section','year'],
-  teachers:['id','teacherId','name','password','passHash','status'],
+  teachers:['id','teacherId','name','password','passHash','status','email','phone','remindMin'],
   subjects:['id','code','name','semester','teacherId','classId'],
   students:['id','regNo','name','dob','gender','course','dept','semester','section','email','phone','admissionYear','status','classId'],
   attendance:['id','studentId','subjectId','teacherId','date','period','status'],
@@ -1789,7 +2126,7 @@ function handleOldWorkbook(e){
 }
 
 /* --- Settings (Firebase link + backup/restore) --- */
-const SETUP_SCRIPT = "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{collection}/{docId} {\n      allow read, write: if collection in ['classes','teachers','subjects','students','attendance','timetable','holidays','sessions','settings','meta'];\n    }\n  }\n}\n";
+const SETUP_SCRIPT = "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{collection}/{docId} {\n      allow read, write: if collection in ['classes','teachers','subjects','students','attendance','timetable','holidays','sessions','settings','meta','sessionfiles','mail'];\n    }\n  }\n}\n";
 
 function renderAdminSettings(){
   const cfg = getSupabaseCfg();
@@ -1805,7 +2142,7 @@ function renderAdminSettings(){
     + (connected ? '<button class="btn btn-ghost" id="sb-pull">Reload from database</button><button class="btn btn-ghost" id="sb-push">Push local data up</button><button class="btn btn-ghost" id="sb-disconnect">Disconnect</button>' : '')
     + '</div><div id="sb-status" class="sub" style="margin-top:10px;"></div></div>';
 
-  html += '<div class="card"><h3>One-time setup: Firestore rules</h3><p class="sub" style="margin-bottom:10px;">1) At console.firebase.google.com create a project. 2) Build &gt; Firestore Database &gt; Create database (any region, production mode). 3) Open the Rules tab, replace everything with the rules below, and Publish. 4) Project settings (gear icon) &gt; General: copy the <b>Project ID</b> and <b>Web API key</b> into the boxes above. Collections are created automatically. Class-note file attachments are not stored (only their names). These rules let anyone who has your key read and write, so keep the file and key within your college.</p>'
+  html += '<div class="card"><h3>One-time setup: Firestore rules</h3><p class="sub" style="margin-bottom:10px;">1) At console.firebase.google.com create a project. 2) Build &gt; Firestore Database &gt; Create database (any region, production mode). 3) Open the Rules tab, replace everything with the rules below, and Publish. 4) Project settings (gear icon) &gt; General: copy the <b>Project ID</b> and <b>Web API key</b> into the boxes above. Collections are created automatically. Class-note file attachments are stored in the sessionfiles collection (re-publish the rules if you set them up earlier). These rules let anyone who has your key read and write, so keep the file and key within your college.</p>'
     + '<div class="sql-box" id="sb-sql">' + escapeHtml(SETUP_SCRIPT) + '</div>'
     + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-ghost btn-sm" id="sb-copy-sql">Copy rules</button></div></div>';
 
@@ -1941,8 +2278,8 @@ function studentFormHtml(){
   const s = editing || {regNo:'', name:'', dob:'', gender:'Female', email:'', phone:'', admissionYear:'2024', status:'Active', classId:DB.classes[0].id};
   return '<h3>'+(editing?'Edit student':'Add student')+'</h3>'
     + '<div class="form-grid">'
-    + '<div class="field"><label>Register number</label><input id="f-regNo" value="'+s.regNo+'"/></div>'
-    + '<div class="field"><label>Name</label><input id="f-name" value="'+s.name+'"/></div>'
+    + '<div class="field"><label>Register number</label><input id="f-regNo" value="'+escapeHtml(s.regNo)+'"/></div>'
+    + '<div class="field"><label>Name</label><input id="f-name" value="'+escapeHtml(s.name)+'"/></div>'
     + '<div class="field"><label>Date of birth</label><input id="f-dob" type="date" value="'+s.dob+'"/></div>'
     + '<div class="field"><label>Gender</label><select id="f-gender">' + ['Female','Male','Other'].map(g=>'<option '+(g===s.gender?'selected':'')+'>'+g+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Class</label><select id="f-classId">' + DB.classes.map(c=>'<option value="'+c.id+'" '+(c.id===s.classId?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('') + '</select></div>'
@@ -2004,7 +2341,7 @@ function renderStudentTable(){
   const html = '<table class="table"><thead><tr><th>Reg. no.</th><th>Name</th><th>Class</th><th>Status</th><th></th></tr></thead><tbody>'
     + (list.map(s=>{
         const cls = DB.classes.find(c=>c.id===s.classId);
-        return '<tr><td>'+s.regNo+'</td><td>'+s.name+'</td><td>'+(cls?cls.course+' S'+cls.semester+'-'+cls.section:'—')+'</td>'
+        return '<tr><td>'+escapeHtml(s.regNo)+'</td><td>'+escapeHtml(s.name)+'</td><td>'+(cls?cls.course+' S'+cls.semester+'-'+cls.section:'—')+'</td>'
           + '<td><span class="badge badge-'+(s.status==='Active'?'success':'danger')+'">'+s.status+'</span></td>'
           + '<td><button class="btn btn-ghost btn-sm" data-edit="'+s.id+'">Edit</button> <button class="btn btn-ghost btn-sm" data-del="'+s.id+'">Delete</button></td></tr>';
       }).join('') || '<tr><td colspan="5" class="empty">No students found.</td></tr>')
@@ -2075,17 +2412,20 @@ function handleImportStudents(e){
 /* --- Teachers --- */
 function teacherFormHtml(){
   const editing = state.teacherForm;
-  const t = editing || {teacherId:'', name:'', password:'', status:'Active'};
+  const t = editing || {teacherId:'', name:'', password:'', status:'Active', email:'', phone:'', remindMin:'15'};
   const assignedIds = DB.subjects.filter(su=>su.teacherId === (editing?editing.id:null)).map(su=>su.id);
   return '<h3>'+(editing?'Edit teacher':'Add teacher')+'</h3>'
     + '<div class="form-grid">'
-    + '<div class="field"><label>Teacher ID</label><input id="f-teacherId" value="'+escapeHtml(t.teacherId)+'"/></div>'
-    + '<div class="field"><label>Name</label><input id="f-tname" value="'+escapeHtml(t.name)+'"/></div>'
-    + '<div class="field"><label>Password</label><input id="f-tpass" type="password" autocomplete="new-password" value="" placeholder="'+(editing?'Leave blank to keep current':'Set a password')+'"/></div>'
+    + '<div class="field"><label>Teacher ID</label><input id="f-teacherId" maxlength="40" value="'+escapeHtml(t.teacherId)+'"/></div>'
+    + '<div class="field"><label>Name</label><input id="f-tname" maxlength="80" value="'+escapeHtml(t.name)+'"/></div>'
+    + '<div class="field"><label>Password</label><input id="f-tpass" type="password" autocomplete="new-password" minlength="8" value="" placeholder="'+(editing?'Leave blank to keep current':'Set a password')+'"/></div>'
+    + '<div class="field"><label>Email (for class reminders)</label><input id="f-temail" type="email" maxlength="254" autocomplete="off" value="'+escapeHtml(t.email||'')+'"/></div>'
+    + '<div class="field"><label>Phone number</label><input id="f-tphone" type="tel" maxlength="20" autocomplete="off" placeholder="+91 98765 43210" value="'+escapeHtml(t.phone||'')+'"/></div>'
+    + '<div class="field"><label>Email reminder</label>'+remindSelectHtml('f-tremind', t.remindMin)+'</div>'
     + '<div class="field"><label>Status</label><select id="f-tstatus">' + ['Active','Inactive'].map(g=>'<option '+(g===t.status?'selected':'')+'>'+g+'</option>').join('') + '</select></div>'
     + '</div>'
     + '<div class="field"><label>Assigned subjects</label><select id="f-tsubjects" multiple size="4">'
-    + DB.subjects.map(su=>'<option value="'+su.id+'" '+(assignedIds.includes(su.id)?'selected':'')+'>'+su.name+' ('+su.code+')</option>').join('')
+    + DB.subjects.map(su=>'<option value="'+su.id+'" '+(assignedIds.includes(su.id)?'selected':'')+'>'+escapeHtml(su.name)+' ('+escapeHtml(su.code)+')</option>').join('')
     + '</select></div>'
     + '<div class="btn-row"><button class="btn btn-primary" id="save-teacher-btn">'+(editing?'Save changes':'Add teacher')+'</button>'
     + (editing?'<button class="btn btn-ghost" id="cancel-teacher-btn">Cancel</button>':'') + '</div>';
@@ -2096,13 +2436,13 @@ function teacherRowsHtml(){
   const list=DB.teachers.filter(t=>{
     if(f.status!=='all'&&t.status!==f.status) return false;
     if(f.classId!=='all'&&!DB.subjects.some(su=>su.teacherId===t.id&&su.classId===f.classId)) return false;
-    return !q||(t.name||'').toLowerCase().includes(q)||(t.teacherId||'').toLowerCase().includes(q);
+    return !q||(t.name||'').toLowerCase().includes(q)||(t.teacherId||'').toLowerCase().includes(q)||(t.email||'').toLowerCase().includes(q);
   });
   return list.map(t=>{
     const subs=DB.subjects.filter(su=>su.teacherId===t.id).map(su=>escapeHtml(su.name)).join(', ')||'—';
-    return '<tr><td>'+escapeHtml(t.teacherId)+'</td><td>'+escapeHtml(t.name)+'</td><td>'+subs+'</td><td><span class="badge badge-'+(t.status==='Active'?'success':'danger')+'">'+t.status+'</span></td>'
+    return '<tr><td>'+escapeHtml(t.teacherId)+'</td><td>'+escapeHtml(t.name)+'</td><td>'+contactCellHtml(t)+'</td><td>'+subs+'</td><td><span class="badge badge-'+(t.status==='Active'?'success':'danger')+'">'+t.status+'</span></td>'
       +'<td><button class="btn btn-ghost btn-sm" data-edit-t="'+t.id+'">Edit</button> <button class="btn btn-ghost btn-sm" data-del-t="'+t.id+'">Delete</button></td></tr>';
-  }).join('')||'<tr><td colspan="5" class="empty">No teachers match.</td></tr>';
+  }).join('')||'<tr><td colspan="6" class="empty">No teachers match.</td></tr>';
 }
 function bindTeacherRows(){
   $all('[data-edit-t]').forEach(b=>b.addEventListener('click',()=>{ state.teacherForm=DB.teachers.find(t=>t.id===b.dataset.editT); renderAdminTeachers(); }));
@@ -2112,10 +2452,10 @@ function renderAdminTeachers(){
   const f=state.tF;
   let html='<div class="page-head"><div><h1>Teachers</h1><div class="sub">'+DB.teachers.length+' records</div></div></div>';
   html+='<div class="card">'+teacherFormHtml()+'</div>';
-  html+='<div class="card"><div class="form-row"><div class="field"><label>Search name / ID</label><input id="tf-q" value="'+escapeHtml(f.q)+'"/></div>'
+  html+='<div class="card"><div class="form-row"><div class="field"><label>Search name / ID / email</label><input id="tf-q" value="'+escapeHtml(f.q)+'"/></div>'
     +'<div class="field"><label>Status</label><select id="tf-status">'+['all','Active','Inactive'].map(s=>'<option value="'+s+'" '+(f.status===s?'selected':'')+'>'+(s==='all'?'All':s)+'</option>').join('')+'</select></div>'
     +'<div class="field"><label>Class / Section</label><select id="tf-class"><option value="all">All classes</option>'+DB.classes.map(c=>'<option value="'+c.id+'" '+(f.classId===c.id?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('')+'</select></div></div>'
-    +'<table class="table"><thead><tr><th>Teacher ID</th><th>Name</th><th>Subjects</th><th>Status</th><th></th></tr></thead><tbody id="t-body">'+teacherRowsHtml()+'</tbody></table></div>';
+    +'<table class="table"><thead><tr><th>Teacher ID</th><th>Name</th><th>Contact</th><th>Subjects</th><th>Status</th><th></th></tr></thead><tbody id="t-body">'+teacherRowsHtml()+'</tbody></table></div>';
   $('#admin-content').innerHTML=html;
   bindTeacherFormEvents(); bindTeacherRows();
   const upd=()=>{ $('#t-body').innerHTML=teacherRowsHtml(); bindTeacherRows(); };
@@ -2131,7 +2471,13 @@ function bindTeacherFormEvents(){
     const pw=$('#f-tpass').value;
     if(!data.name || !data.teacherId){ alert('Teacher ID and name are required.'); return; }
     if(!state.teacherForm && !pw){ alert('Set a password for the new teacher.'); return; }
+    if(pw && pw.length<8){ alert('Password must be at least 8 characters.'); return; }
+    if(DB.teachers.some(t=>(!state.teacherForm||t.id!==state.teacherForm.id) && (t.teacherId||'').toLowerCase()===data.teacherId.toLowerCase())){ alert('That Teacher ID is already in use.'); return; }
     const rid = state.teacherForm ? state.teacherForm.id : uid('TC');
+    const hadEmail = state.teacherForm && state.teacherForm.email;
+    const c = readContact($('#f-temail'), $('#f-tphone'), $('#f-tremind'), rid, !state.teacherForm || !!hadEmail);
+    if(c.error){ alert(c.error); return; }
+    data.email = c.email; data.phone = c.phone; data.remindMin = c.remindMin;
     if(pw){ data.passHash = await hashPw(pw, rid); data.password = ''; }
     let teacherId, savedTeacher;
     if(state.teacherForm){ Object.assign(state.teacherForm, data); teacherId = state.teacherForm.id; savedTeacher = state.teacherForm; }
@@ -2156,10 +2502,10 @@ function subjectFormHtml(){
   const s = editing || {code:'', name:'', semester:2, teacherId:DB.teachers[0]?DB.teachers[0].id:'', classId:DB.classes[0].id};
   return '<h3>'+(editing?'Edit subject':'Add subject')+'</h3>'
     + '<div class="form-grid">'
-    + '<div class="field"><label>Subject code</label><input id="f-scode" value="'+s.code+'"/></div>'
-    + '<div class="field"><label>Subject name</label><input id="f-sname" value="'+s.name+'"/></div>'
+    + '<div class="field"><label>Subject code</label><input id="f-scode" value="'+escapeHtml(s.code)+'"/></div>'
+    + '<div class="field"><label>Subject name</label><input id="f-sname" value="'+escapeHtml(s.name)+'"/></div>'
     + '<div class="field"><label>Semester</label><input id="f-ssem" type="number" min="1" max="4" value="'+s.semester+'"/></div>'
-    + '<div class="field"><label>Teacher</label><select id="f-steacher">' + DB.teachers.map(t=>'<option value="'+t.id+'" '+(t.id===s.teacherId?'selected':'')+'>'+t.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Teacher</label><select id="f-steacher">' + DB.teachers.map(t=>'<option value="'+t.id+'" '+(t.id===s.teacherId?'selected':'')+'>'+escapeHtml(t.name)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Class</label><select id="f-sclass">' + DB.classes.map(c=>'<option value="'+c.id+'" '+(c.id===s.classId?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('') + '</select></div>'
     + '</div><div class="btn-row"><button class="btn btn-primary" id="save-subject-btn">'+(editing?'Save changes':'Add subject')+'</button>'
     + (editing?'<button class="btn btn-ghost" id="cancel-subject-btn">Cancel</button>':'') + '</div>';
@@ -2172,7 +2518,7 @@ function renderAdminSubjects(){
     + DB.subjects.map(su=>{
         const t = DB.teachers.find(x=>x.id===su.teacherId);
         const c = DB.classes.find(x=>x.id===su.classId);
-        return '<tr><td>'+su.code+'</td><td>'+su.name+'</td><td>'+su.semester+'</td><td>'+(t?t.name:'Unassigned')+'</td><td>'+(c?c.course+' S'+c.semester+'-'+c.section:'—')+'</td>'
+        return '<tr><td>'+escapeHtml(su.code)+'</td><td>'+escapeHtml(su.name)+'</td><td>'+su.semester+'</td><td>'+(t?escapeHtml(t.name):'Unassigned')+'</td><td>'+(c?c.course+' S'+c.semester+'-'+c.section:'—')+'</td>'
           + '<td><button class="btn btn-ghost btn-sm" data-edit-s="'+su.id+'">Edit</button> <button class="btn btn-ghost btn-sm" data-del-s="'+su.id+'">Delete</button></td></tr>';
       }).join('')
     + '</tbody></table></div>';
@@ -2262,8 +2608,8 @@ function renderAdminAttendance(){
   let html = '<div class="page-head"><div><h1>Attendance</h1><div class="sub">Search, correct or export attendance across the institution.</div></div></div>';
   html += '<div class="card"><div class="form-row">'
     + '<div class="field"><label>Class</label><select id="att-class"><option value="all">All classes</option>' + DB.classes.map(c=>'<option value="'+c.id+'" '+(f.classId===c.id?'selected':'')+'>'+c.course+' S'+c.semester+'-'+c.section+'</option>').join('') + '</select></div>'
-    + '<div class="field"><label>Subject</label><select id="att-subject"><option value="all">All subjects</option>' + DB.subjects.map(su=>'<option value="'+su.id+'" '+(f.subjectId===su.id?'selected':'')+'>'+su.name+'</option>').join('') + '</select></div>'
-    + '<div class="field"><label>Teacher</label><select id="att-teacher"><option value="all">All teachers</option>' + DB.teachers.map(t=>'<option value="'+t.id+'" '+(f.teacherId===t.id?'selected':'')+'>'+t.name+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Subject</label><select id="att-subject"><option value="all">All subjects</option>' + DB.subjects.map(su=>'<option value="'+su.id+'" '+(f.subjectId===su.id?'selected':'')+'>'+escapeHtml(su.name)+'</option>').join('') + '</select></div>'
+    + '<div class="field"><label>Teacher</label><select id="att-teacher"><option value="all">All teachers</option>' + DB.teachers.map(t=>'<option value="'+t.id+'" '+(f.teacherId===t.id?'selected':'')+'>'+escapeHtml(t.name)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Month</label><select id="att-month"><option value="all">All months</option>' + monthsData.map(m=>'<option value="'+m.prefix+'" '+(f.month===m.prefix?'selected':'')+'>'+m.name+' '+m.prefix.slice(0,4)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>From</label><input type="date" id="att-from" value="'+(f.from||'')+'"/></div><div class="field"><label>To</label><input type="date" id="att-to" value="'+(f.to||'')+'"/></div>'
     + '<div class="field"><label>Status</label><select id="att-status"><option value="">All</option><option value="P" '+(f.status==='P'?'selected':'')+'>Present</option><option value="A" '+(f.status==='A'?'selected':'')+'>Absent</option></select></div>'
@@ -2432,32 +2778,356 @@ function renderAdminAnalytics(){
   const o = overallStatsAll(), dates = Array.from(new Set(DB.attendance.map(a=>a.date))).sort().slice(-30);
   const pctOn = d=>{ const r = DB.attendance.filter(a=>a.date===d); return r.length ? Math.round(100*r.filter(a=>a.status==='P').length/r.length) : 0; };
   const heat = {}; DB.attendance.forEach(a=>{ const k = JS_DAY_TO_NAME[new Date(a.date+'T00:00:00').getDay()]+'_'+a.period; const h = heat[k] = heat[k] || [0,0]; h[1]++; if(a.status==='P') h[0]++; });
-  const hm = '<table class="hm-table"><tr><th></th>'+PERIODS.map(p=>'<th>P'+p+'</th>').join('')+'</tr>'+WEEKDAYS.map(w=>'<tr><th>'+w+'</th>'+PERIODS.map(p=>{ const h = heat[w+'_'+p]; if(!h) return '<td class="hm" style="background:#f1eee6">–</td>'; const v = Math.round(100*h[0]/h[1]); return '<td class="hm" style="background:hsl('+(v*1.2)+',55%,'+(92-v*0.35)+'%)">'+v+'%</td>'; }).join('')+'</tr>').join('')+'</table>';
-  const risk = DB.students.map(s=>({s, p:stuPct(s.id)})).sort((a,b)=>a.p-b.p).slice(0,6);
-  let html = '<div class="page-head"><div><h1>Analytics</h1><div class="sub">Live attendance insights</div></div></div>'
-    + '<div class="grid-2"><div class="card"><h3>Present vs absent</h3>'+cv('ch-donut',260)+'</div><div class="card"><h3>Daily attendance % (last 30 days)</h3>'+cv('ch-line',260)+'</div></div>'
-    + '<div class="grid-2"><div class="card"><h3>Subjects: present vs absent</h3>'+cv('ch-sub',280)+'</div><div class="card"><h3>Class comparison (%)</h3>'+cv('ch-cls',280)+'</div></div>'
-    + '<div class="grid-2"><div class="card"><h3>Heatmap: weekday × period</h3>'+hm+'</div><div class="card"><h3>Needs attention (lowest attendance)</h3>'
-    + risk.map(x=>'<div class="risk-row"><span>'+escapeHtml(x.s.name)+'</span><span class="badge badge-'+statusFor(x.p).cls+'">'+x.p+'%</span></div>').join('')+'</div></div>';
+  const hm = '<table class="hm-table"><tr><th></th>'+PERIODS.map(p=>'<th>P'+p+'</th>').join('')+'</tr>'+WEEKDAYS.map(w=>'<tr><th>'+w+'</th>'+PERIODS.map(p=>{ const h = heat[w+'_'+p]; if(!h) return '<td class="hm" style="background:#f1eee6;color:#999">–</td>'; const v = Math.round(100*h[0]/h[1]); const bg = v>=85?'#CFE5D8':(v>=75?'#F4E3B5':'#EBC4C0'); const fg = v>=85?CLR.good:(v>=75?'#7a5b06':CLR.bad); return '<td class="hm" style="background:'+bg+';color:'+fg+'">'+v+'%</td>'; }).join('')+'</tr>').join('')+'</table>';
+  const ranked = DB.students.map(s=>{ const r = DB.attendance.filter(a=>a.studentId===s.id); return {s, p:r.length?Math.round(100*r.filter(a=>a.status==='P').length/r.length):null, held:r.length}; }).filter(x=>x.p!==null);
+  const below = ranked.filter(x=>x.p<75), risk = ranked.slice().sort((a,b)=>a.p-b.p).slice(0,8);
+  const today = todayStr(), tRecs = DB.attendance.filter(a=>a.date===today), tPct = tRecs.length?Math.round(100*tRecs.filter(a=>a.status==='P').length/tRecs.length):null;
+  const kc = p=>p==null?'':(p>=85?'good':(p>=75?'warn':'bad'));
+  let html = '<div class="page-head"><div><h1>Analytics</h1><div class="sub">What is happening with attendance, and where to act.</div></div></div>'
+    + '<div class="stat-grid">'
+    + '<div class="stat-card kpi '+kc(o.pct)+'"><div class="num">'+o.pct+'%</div><div class="label">Overall attendance</div></div>'
+    + '<div class="stat-card kpi '+kc(tPct)+'"><div class="num">'+(tPct==null?'–':tPct+'%')+'</div><div class="label">Today'+(tPct==null?' (nothing marked yet)':'')+'</div></div>'
+    + '<div class="stat-card kpi '+(below.length?'bad':'good')+'"><div class="num">'+below.length+'</div><div class="label">Students below 75%</div></div>'
+    + '<div class="stat-card kpi"><div class="num">'+o.held+'</div><div class="label">Attendance entries recorded</div></div></div>'
+    + legendHtml()
+    + '<div class="grid-2"><div class="card"><h3>Present vs absent</h3><p class="chart-note">All recorded entries.</p>'+cv('ch-donut',240)+'</div>'
+    + '<div class="card"><h3>Daily attendance, last 30 class days</h3><p class="chart-note">Dips under the dashed line are days to look into.</p>'+cv('ch-line',240)+'</div></div>'
+    + '<div class="grid-2"><div class="card"><h3>Attendance by subject</h3><p class="chart-note">Coloured by status; sorted lowest first.</p>'+cv('ch-sub',Math.max(180,DB.subjects.length*34+40))+'</div>'
+    + '<div class="card"><h3>Attendance by class</h3><p class="chart-note">Compare sections side by side.</p>'+cv('ch-cls',Math.max(180,DB.classes.length*40+40))+'</div></div>'
+    + '<div class="grid-2"><div class="card"><h3>Best and worst slots</h3><p class="chart-note">Average attendance by weekday and period. Green is healthy, red needs attention.</p>'+hm+'</div>'
+    + '<div class="card"><h3>Needs attention</h3><p class="chart-note">Students with the lowest attendance.</p>'
+    + (risk.length?risk.map(x=>{ const c = DB.classes.find(k=>k.id===x.s.classId); return '<div class="risk-row"><span>'+escapeHtml(x.s.name)+'<small>'+escapeHtml(x.s.regNo)+(c?' · '+escapeHtml(c.course+' S'+c.semester+'-'+c.section):'')+'</small></span><span class="badge badge-'+statusFor(x.p).cls+'">'+x.p+'%</span></div>'; }).join(''):'<p class="empty">No attendance recorded yet.</p>')+'</div></div>';
   $('#admin-content').innerHTML = html;
   if(!window.Chart){ $('#admin-content').insertAdjacentHTML('beforeend','<p class="empty">Charts need an internet connection to load.</p>'); return; }
-  const C = ['#7A1E2C','#B9862E','#2F6F4E','#4A6FA5','#8a5a9e','#3b8f9c','#A33636'];
-  new Chart($('#ch-donut'), {type:'doughnut', data:{labels:['Present','Absent'], datasets:[{data:[o.present, o.held-o.present], backgroundColor:['#2F6F4E','#A33636'], borderWidth:0}]}, options:{maintainAspectRatio:false, cutout:'68%'}});
-  new Chart($('#ch-line'), {type:'line', data:{labels:dates.map(d=>d.slice(5)), datasets:[{label:'Attendance %', data:dates.map(pctOn), borderColor:'#7A1E2C', backgroundColor:'rgba(122,30,44,.16)', fill:true, tension:.35}]}, options:{maintainAspectRatio:false, scales:{y:{min:0,max:100}}}});
-  const sc = su=>{ const r = DB.attendance.filter(a=>a.subjectId===su.id), p = r.filter(a=>a.status==='P').length; return [p, r.length-p]; };
-  new Chart($('#ch-sub'), {type:'bar', data:{labels:DB.subjects.map(su=>su.code), datasets:[{label:'Present', data:DB.subjects.map(su=>sc(su)[0]), backgroundColor:'#2F6F4E'},{label:'Absent', data:DB.subjects.map(su=>sc(su)[1]), backgroundColor:'#A33636'}]}, options:{maintainAspectRatio:false, scales:{x:{stacked:true},y:{stacked:true}}}});
-  new Chart($('#ch-cls'), {type:'bar', data:{labels:DB.classes.map(c=>c.course+' S'+c.semester+'-'+c.section), datasets:[{label:'Attendance %', data:DB.classes.map(c=>classOverallStats(c.id).pct), backgroundColor:C}]}, options:{maintainAspectRatio:false, indexAxis:'y', scales:{x:{min:0,max:100}}}});
+  const pctAx = {min:0,max:100,ticks:{callback:v=>v+'%'},grid:{color:CLR.grid}};
+  new Chart($('#ch-donut'), {type:'doughnut', data:{labels:['Present','Absent'], datasets:[{data:[o.present, o.held-o.present], backgroundColor:[CLR.good,CLR.bad], borderWidth:0}]}, options:{maintainAspectRatio:false, cutout:'66%', plugins:{legend:{position:'bottom'}}}});
+  const dp = dates.map(pctOn);
+  new Chart($('#ch-line'), {type:'line', data:{labels:dates.map(d=>d.slice(5)), datasets:[{label:'Attendance %', data:dp, borderColor:CLR.brand, backgroundColor:'rgba(122,30,44,.12)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:dp.map(clrFor)}]}, options:{maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}}, scales:{y:pctAx, x:{grid:{display:false}}}}, plugins:[targetLine]});
+  const subs = DB.subjects.map(su=>({n:su.name, p:subjectOverallStats(su.id).pct})).sort((a,b)=>a.p-b.p);
+  new Chart($('#ch-sub'), {type:'bar', data:{labels:subs.map(x=>x.n), datasets:[{data:subs.map(x=>x.p), backgroundColor:subs.map(x=>clrFor(x.p)), borderRadius:4}]}, options:{indexAxis:'y', maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}, tooltip:{callbacks:{label:c=>c.parsed.x+'% attendance'}}}, scales:{x:pctAx, y:{grid:{display:false}}}}, plugins:[targetLine]});
+  const cls = DB.classes.map(c=>({n:c.course+' S'+c.semester+'-'+c.section, p:classOverallStats(c.id).pct}));
+  new Chart($('#ch-cls'), {type:'bar', data:{labels:cls.map(x=>x.n), datasets:[{data:cls.map(x=>x.p), backgroundColor:cls.map(x=>clrFor(x.p)), borderRadius:4}]}, options:{indexAxis:'y', maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}, tooltip:{callbacks:{label:c=>c.parsed.x+'% attendance'}}}, scales:{x:pctAx, y:{grid:{display:false}}}}, plugins:[targetLine]});
 }
 
-const _rsd = renderStudentDashboard;
-renderStudentDashboard = function(){
-  _rsd();
-  const st = DB.students.find(x=>x.id===state.studentId); if(!st || !window.Chart) return;
-  const subs = DB.subjects.filter(su=>su.classId===st.classId);
-  const pc = su=>{ const r = DB.attendance.filter(a=>a.studentId===st.id && a.subjectId===su.id); return r.length ? Math.round(100*r.filter(a=>a.status==='P').length/r.length) : 0; };
-  $('#student-content').insertAdjacentHTML('beforeend', '<div class="card"><h3>Subject-wise attendance</h3>'+cv('ch-stu',320)+'</div>');
-  new Chart($('#ch-stu'), {type:'radar', data:{labels:subs.map(su=>su.code), datasets:[{label:'Attendance %', data:subs.map(pc), borderColor:'#7A1E2C', backgroundColor:'rgba(122,30,44,.2)'},{label:'75% target', data:subs.map(()=>75), borderColor:'#B9862E', borderDash:[5,5], pointRadius:0, fill:false}]}, options:{maintainAspectRatio:false, scales:{r:{min:0,max:100}}}});
-};
+/* ============================= CHECK DETAILS (view-only, not on the dashboard) ============================= */
+const DET = {tab:'students', q:'', classId:'all'};
+const DASH = '<span style="color:var(--muted)">—</span>';
+function clsLabel(c){ return c ? c.course+' S'+c.semester+'-'+c.section : '—'; }
+function statusBadge(st){ return '<span class="badge badge-'+(st==='Active'?'success':'danger')+'">'+escapeHtml(st||'—')+'</span>'; }
+function pctBadge(held,pct){ if(!held) return DASH; const s=statusFor(pct); return '<span class="badge badge-'+s.cls+'">'+pct+'%</span>'; }
+function detailsTable(){
+  const q=DET.q.trim().toLowerCase(), cf=DET.classId, E=escapeHtml;
+  const D=v=>(v===undefined||v===null||v==='')?DASH:E(v);
+  let head=[], rows=[];
+  if(DET.tab==='students'){
+    head=['Reg no.','Name','Class','Date of birth','Gender','Email','Phone','Admission year','Status','Attendance'];
+    DB.students.forEach(s=>{
+      if(cf!=='all' && s.classId!==cf) return;
+      const c=DB.classes.find(x=>x.id===s.classId);
+      let a={held:0,pct:0}; try{ a=overallStatsForStudent(s.id); }catch(e){}
+      rows.push({t:[s.regNo,s.name,s.email,s.phone,clsLabel(c)].join(' '), c:[D(s.regNo),D(s.name),E(clsLabel(c)),D(s.dob),D(s.gender),D(s.email),D(s.phone),D(s.admissionYear),statusBadge(s.status),pctBadge(a.held,a.pct)]});
+    });
+  } else if(DET.tab==='teachers'){
+    head=['Teacher ID','Name','Email','Phone','Subjects','Email reminder','Status'];
+    DB.teachers.forEach(t=>{
+      const subs=DB.subjects.filter(su=>su.teacherId===t.id && (cf==='all'||su.classId===cf));
+      if(cf!=='all' && !subs.length) return;
+      const names=DB.subjects.filter(su=>su.teacherId===t.id).map(su=>su.name).join(', ');
+      const r=Number(t.remindMin)>0 ? t.remindMin+' min before class' : 'Off';
+      rows.push({t:[t.teacherId,t.name,t.email,t.phone,names].join(' '), c:[D(t.teacherId),D(t.name),D(t.email),D(t.phone),D(names),E(r),statusBadge(t.status)]});
+    });
+  } else if(DET.tab==='subjects'){
+    head=['Code','Subject','Class','Semester','Teacher'];
+    DB.subjects.forEach(su=>{
+      if(cf!=='all' && su.classId!==cf) return;
+      const c=DB.classes.find(x=>x.id===su.classId), t=DB.teachers.find(x=>x.id===su.teacherId);
+      rows.push({t:[su.code,su.name,t&&t.name,clsLabel(c)].join(' '), c:[D(su.code),D(su.name),E(clsLabel(c)),D(su.semester),D(t&&t.name)]});
+    });
+  } else {
+    head=['Class','Year','Students','Subjects','Average attendance'];
+    DB.classes.forEach(c=>{
+      const st=classOverallStats(c.id);
+      rows.push({t:clsLabel(c)+' '+(c.year||''), c:[E(clsLabel(c)),D(c.year),DB.students.filter(s=>s.classId===c.id).length,DB.subjects.filter(s=>s.classId===c.id).length,pctBadge(st.held,st.pct)]});
+    });
+  }
+  const shown=rows.filter(r=>!q||r.t.toLowerCase().includes(q));
+  return {count:shown.length, html:'<table class="table"><thead><tr>'+head.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'
+    + (shown.length ? shown.map(r=>'<tr>'+r.c.map(x=>'<td>'+x+'</td>').join('')+'</tr>').join('') : '<tr><td colspan="'+head.length+'" class="empty">Nothing matches.</td></tr>')
+    + '</tbody></table>'};
+}
+function renderAdminDetails(){
+  const tabs=[['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes']];
+  let html='<div class="page-head"><div><h1>Check Details</h1><div class="sub">View-only. Look up records here — nothing on this page can be edited or deleted. Use the Students, Teachers, Subjects and Classes pages to make changes.</div></div></div>';
+  html+='<div class="card"><div class="toggle-group" id="det-tabs" style="margin-bottom:14px;">'
+    + tabs.map(t=>'<button class="toggle-btn '+(DET.tab===t[0]?'active-present':'')+'" data-det="'+t[0]+'">'+t[1]+'</button>').join('')+'</div>'
+    + '<div class="form-row"><div class="field"><label>Search</label><input id="det-q" placeholder="Name, ID, email, phone…" value="'+escapeHtml(DET.q)+'"/></div>'
+    + (DET.tab!=='classes' ? '<div class="field"><label>Class</label><select id="det-class"><option value="all">All classes</option>'+DB.classes.map(c=>'<option value="'+c.id+'" '+(DET.classId===c.id?'selected':'')+'>'+escapeHtml(clsLabel(c))+'</option>').join('')+'</select></div>' : '')
+    + '</div><div class="sub" id="det-count" style="margin-bottom:8px;"></div><div style="overflow-x:auto;" id="det-table"></div></div>';
+  $('#admin-content').innerHTML=html;
+  const upd=()=>{ const t=detailsTable(); $('#det-table').innerHTML=t.html; $('#det-count').textContent=t.count+' record'+(t.count===1?'':'s'); };
+  upd();
+  $all('#det-tabs [data-det]').forEach(b=>b.addEventListener('click',()=>{ DET.tab=b.dataset.det; DET.q=''; renderAdminDetails(); }));
+  $('#det-q').addEventListener('input',e=>{ DET.q=e.target.value; upd(); });
+  const sel=$('#det-class'); if(sel) sel.addEventListener('change',e=>{ DET.classId=e.target.value; upd(); });
+}
+
+/* ============================= EMAIL REMINDERS (automatic + manual) ============================= */
+/* The app queues each email as a document in the Firestore "mail" collection. The Firebase extension
+   "Trigger Email from Firestore" (see the setup card on the page) actually delivers it by SMTP. */
+const AUTO = {sent:0, lastErr:'', lastAt:0};
+const MAILED = new Set();
+function autoOn(){ return getSetting('autoRemind',{on:true}).on!==false; }
+function collegeName(){ return (getSetting('brand',{}).name||'').trim() || 'Attendance Ledger'; }
+function mailFields(m){
+  const S=v=>({stringValue:String(v)});
+  return {
+    to:S(m.to),
+    message:{mapValue:{fields:{subject:S(m.subject), text:S(m.text), html:S(m.html)}}},
+    kind:S(m.kind), by:S(m.by), teacherId:S(m.teacherId||''), createdAt:{integerValue:String(Date.now())}
+  };
+}
+/* once=true: create only if that document does not exist yet, so the same reminder is never sent twice. */
+async function queueMail(id, m, once){
+  const c=getSupabaseCfg();
+  const w={update:{name:fsRoot(c)+'/mail/'+id, fields:mailFields(m)}};
+  if(once) w.currentDocument={exists:false};
+  try{ await fsPost(c,':commit',{writes:[w]}); return 'queued'; }
+  catch(e){ if(once && /HTTP 409/.test(e.message)) return 'duplicate'; throw e; }
+}
+function mailWrap(title, inner){
+  return '<div style="font-family:Arial,sans-serif;max-width:560px;color:#211316;"><h2 style="color:#7A1E2C;margin:0 0 10px;">'+escapeHtml(title)+'</h2>'+inner
+    +'<p style="color:#726B62;font-size:12px;margin-top:22px;">'+escapeHtml(collegeName())+' · automated message</p></div>';
+}
+function classLinesFor(teacher, dayName){
+  if(WEEKDAYS.indexOf(dayName)===-1) return [];
+  const ids=new Set(DB.subjects.filter(su=>su.teacherId===teacher.id).map(s=>s.id));
+  return DB.timetable.filter(tt=>tt.day===dayName && ids.has(tt.subjectId)).sort((a,b)=>a.period-b.period).map(tt=>{
+    const su=DB.subjects.find(x=>x.id===tt.subjectId), cl=DB.classes.find(x=>x.id===tt.classId);
+    return {period:tt.period, time:PERIOD_TIMES[tt.period]||'', subject:su?su.name:'Class', cls:clsLabel(cl)};
+  });
+}
+function scheduleMail(teacher, dayLabel, lines){
+  const rows=lines.map(l=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">Period '+l.period+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+escapeHtml(l.time)+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+escapeHtml(l.subject)+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+escapeHtml(l.cls)+'</td></tr>').join('');
+  return {
+    subject:'Your classes — '+dayLabel,
+    text:'Hello '+teacher.name+',\n\nYour classes for '+dayLabel+':\n'+lines.map(l=>'Period '+l.period+' ('+l.time+') — '+l.subject+' · '+l.cls).join('\n')+'\n\n'+collegeName(),
+    html:mailWrap('Your classes — '+dayLabel,'<p>Hello '+escapeHtml(teacher.name)+',</p><table style="border-collapse:collapse;font-size:14px;">'+rows+'</table>')
+  };
+}
+function classMail(teacher, tt, diff){
+  const su=DB.subjects.find(x=>x.id===tt.subjectId), cl=DB.classes.find(x=>x.id===tt.classId);
+  const subj=su?su.name:'Class', where=clsLabel(cl), time=PERIOD_TIMES[tt.period]||'';
+  return {
+    subject:'Class reminder: '+subj+' in '+diff+' min',
+    text:'Hello '+teacher.name+',\n\n'+subj+' ('+where+') starts in about '+diff+' minutes — Period '+tt.period+', '+time+'.\n\n'+collegeName(),
+    html:mailWrap('Class in '+diff+' minutes','<p>Hello '+escapeHtml(teacher.name)+',</p><p><b>'+escapeHtml(subj)+'</b> · '+escapeHtml(where)+'<br>Period '+tt.period+' · '+escapeHtml(time)+'</p>')
+  };
+}
+function mailId(s){ return String(s).replace(/[^A-Za-z0-9_-]/g,'_'); }
+/* Automatic: runs every 30 s while an admin or teacher has the app open. */
+async function autoEmailReminders(){
+  if(!(state.role==='admin'||state.role==='teacher') || !BACKEND_ON() || !autoOn()) return;
+  if(WEEKDAYS.indexOf(todayDayName())===-1) return;
+  if(DB.holidays.some(h=>h.date===todayStr() && h.type==='Holiday')) return;
+  const now=new Date(), nowMin=now.getHours()*60+now.getMinutes();
+  for(const t of DB.teachers){
+    const email=normEmail(t.email), lead=Number(t.remindMin===undefined||t.remindMin===''?15:t.remindMin);
+    if(t.status==='Inactive' || !email || !validEmail(email) || !(lead>0)) continue;
+    for(const tt of teacherTodayClasses(t)){
+      const st=periodStartMin(tt.period); if(st===null) continue;
+      const diff=st-nowMin, key='rem_'+mailId(todayStr()+'_'+t.id+'_'+tt.subjectId+'_'+tt.period);
+      if(diff<=0 || diff>lead || MAILED.has(key)) continue;
+      MAILED.add(key);
+      try{
+        const m=classMail(t,tt,diff);
+        const r=await queueMail(key,{to:email,subject:m.subject,text:m.text,html:m.html,kind:'class-reminder',by:'auto',teacherId:t.id},true);
+        if(r==='queued'){ AUTO.sent++; AUTO.lastAt=Date.now(); AUTO.lastErr=''; }
+      }catch(e){ AUTO.lastErr=e.message; }
+    }
+  }
+}
+setInterval(autoEmailReminders, 30000);
+setTimeout(autoEmailReminders, 4000);
+
+function classLinesForClass(classId, dayName){
+  if(WEEKDAYS.indexOf(dayName)===-1) return [];
+  return DB.timetable.filter(tt=>tt.day===dayName && tt.classId===classId).sort((a,b)=>a.period-b.period).map(tt=>{
+    const su=DB.subjects.find(x=>x.id===tt.subjectId), cl=DB.classes.find(x=>x.id===tt.classId);
+    return {period:tt.period, time:PERIOD_TIMES[tt.period]||'', subject:su?su.name:'Class', cls:clsLabel(cl)};
+  });
+}
+function attendanceMail(stu){
+  const o=overallStatsForStudent(stu.id);
+  if(!o.held) return null;
+  const rows=o.subjects.map(su=>{ const s=subjectStatsForStudent(stu.id,su.id); const p=s.held?Math.round((s.present/s.held)*1000)/10:null; return {n:su.name, held:s.held, present:s.present, pct:p}; }).filter(r=>r.held);
+  const low=o.pct<75;
+  const tr=rows.map(r=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+escapeHtml(r.n)+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+r.present+' / '+r.held+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;color:'+(r.pct<75?'#A33636':'#2F6F4E')+';">'+r.pct+'%</td></tr>').join('');
+  return {
+    subject:'Your attendance: '+o.pct+'%'+(low?' — below 75%':''),
+    text:'Hello '+stu.name+',\n\nYour overall attendance is '+o.pct+'% ('+o.present+' of '+o.held+' classes).'+(low?' This is below the required 75%.':'')+'\n\n'+rows.map(r=>r.n+': '+r.pct+'%').join('\n')+'\n\n'+collegeName(),
+    html:mailWrap('Your attendance: '+o.pct+'%','<p>Hello '+escapeHtml(stu.name)+',</p><p>You attended '+o.present+' of '+o.held+' classes.'+(low?' <b style="color:#A33636;">This is below the required 75%.</b>':'')+'</p><table style="border-collapse:collapse;font-size:14px;"><tr><th align="left" style="padding:6px 10px;">Subject</th><th align="left" style="padding:6px 10px;">Present</th><th align="left" style="padding:6px 10px;">%</th></tr>'+tr+'</table>')
+  };
+}
+const MAIL_UI = {aud:'teachers', type:'today', pT:null, pS:null, q:'', classId:'all', status:'', statusBad:false, busy:false, log:[], logMsg:'Loading…'};
+function okMail(p){ return validEmail(normEmail(p.email)); }
+function mailTeachers(){ return DB.teachers.filter(t=>t.status!=='Inactive'); }
+function mailStudents(){
+  const q=MAIL_UI.q.trim().toLowerCase();
+  return DB.students.filter(s=>s.status!=='Inactive' && (MAIL_UI.classId==='all'||s.classId===MAIL_UI.classId) && (!q||((s.name||'')+' '+(s.regNo||'')).toLowerCase().includes(q)));
+}
+function mailInit(){
+  if(!MAIL_UI.pT) MAIL_UI.pT=new Set(mailTeachers().filter(okMail).map(t=>t.id));
+  if(!MAIL_UI.pS) MAIL_UI.pS=new Set();
+}
+function mailRowHtml(p, set, attr, sub){
+  const ok=okMail(p);
+  return '<label style="display:flex;gap:8px;align-items:center;margin:0 0 6px;color:var(--ink);'+(ok?'':'opacity:.55;')+'"><input type="checkbox" style="width:auto;" '+attr+'="'+p.id+'" '+(ok&&set.has(p.id)?'checked':'')+' '+(ok?'':'disabled')+'/> '+escapeHtml(p.name)+' <span style="color:var(--muted);font-size:.8rem;">'+escapeHtml(sub)+' · '+(ok?escapeHtml(p.email):'no email on file')+'</span></label>';
+}
+function recipientsHtml(){
+  const box='max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);padding:8px 12px;background:var(--surface);margin-bottom:10px;';
+  let h='';
+  if(MAIL_UI.aud!=='students'){
+    const ts=mailTeachers();
+    h+='<div style="font-size:.8rem;color:var(--muted);margin-bottom:4px;">Teachers</div><div style="'+box+'">'+(ts.length?ts.map(t=>mailRowHtml(t,MAIL_UI.pT,'data-mr-t','Teacher')).join(''):'<span class="sub">No active teachers.</span>')+'</div>';
+  }
+  if(MAIL_UI.aud!=='teachers'){
+    const ss=mailStudents();
+    h+='<div style="font-size:.8rem;color:var(--muted);margin-bottom:4px;">Students ('+ss.length+' shown)</div><div style="'+box+'">'+(ss.length?ss.map(s=>{ const c=DB.classes.find(x=>x.id===s.classId); return mailRowHtml(s,MAIL_UI.pS,'data-mr-s',clsLabel(c)); }).join(''):'<span class="sub">No students match.</span>')+'</div>';
+  }
+  return h;
+}
+function selCount(){
+  const t=MAIL_UI.aud!=='students'?[...MAIL_UI.pT].filter(id=>{const x=DB.teachers.find(y=>y.id===id);return x&&okMail(x);}).length:0;
+  const s=MAIL_UI.aud!=='teachers'?[...MAIL_UI.pS].filter(id=>{const x=DB.students.find(y=>y.id===id);return x&&okMail(x);}).length:0;
+  return {t,s};
+}
+function btnGroup(id, opts, cur){
+  return '<div class="toggle-group" id="'+id+'" style="flex-wrap:wrap;">'+opts.map(o=>'<button type="button" class="toggle-btn '+(cur===o[0]?'active-present':'')+'" data-v="'+o[0]+'">'+o[1]+'</button>').join('')+'</div>';
+}
+function decMailDoc(d){
+  const f=d.fields||{}, g=k=>f[k]&&('stringValue' in f[k])?f[k].stringValue:'';
+  const msg=f.message&&f.message.mapValue?f.message.mapValue.fields||{}:{};
+  const del=f.delivery&&f.delivery.mapValue?f.delivery.mapValue.fields||{}:{};
+  let to=''; if(f.to){ to=('stringValue' in f.to)?f.to.stringValue:((f.to.arrayValue&&f.to.arrayValue.values)||[]).map(x=>x.stringValue).join(', '); }
+  return {to, subject:msg.subject?msg.subject.stringValue:'', by:g('by'), createdAt:f.createdAt?Number(f.createdAt.integerValue):0,
+    state:del.state?del.state.stringValue:'', error:del.error&&del.error.stringValue?del.error.stringValue:''};
+}
+async function loadMailLog(){
+  if(!BACKEND_ON()){ MAIL_UI.log=[]; MAIL_UI.logMsg='Connect the database in Settings to see sent emails.'; return; }
+  try{
+    const c=getSupabaseCfg();
+    const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:25}});
+    MAIL_UI.log=items.filter(i=>i.document).map(i=>decMailDoc(i.document));
+    MAIL_UI.logMsg=MAIL_UI.log.length?'':'No emails yet.';
+  }catch(e){ MAIL_UI.log=[]; MAIL_UI.logMsg='Could not load the email log ('+e.message+'). Publish the updated Firestore rules (card below) so the "mail" collection is allowed.'; }
+}
+function mailLogHtml(){
+  if(!MAIL_UI.log.length) return '<p class="sub">'+escapeHtml(MAIL_UI.logMsg)+'</p>';
+  return '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>When</th><th>To</th><th>Subject</th><th>Sent by</th><th>Status</th></tr></thead><tbody>'
+    + MAIL_UI.log.map(m=>{
+      const s=m.state==='SUCCESS'?['success','Delivered']:m.state==='ERROR'?['danger','Failed']:['warning','Queued'];
+      return '<tr><td>'+(m.createdAt?escapeHtml(new Date(m.createdAt).toLocaleString()):DASH)+'</td><td>'+escapeHtml(m.to)+'</td><td>'+escapeHtml(m.subject)+'</td><td>'+(m.by==='auto'?'Automatic':'Manual')+'</td><td><span class="badge badge-'+s[0]+'" '+(m.error?'title="'+escapeHtml(m.error)+'"':'')+'>'+s[1]+'</span></td></tr>';
+    }).join('')+'</tbody></table></div>';
+}
+function renderAdminReminders(){
+  mailInit();
+  const on=autoOn(), conn=BACKEND_ON();
+  if(MAIL_UI.aud==='teachers' && MAIL_UI.type==='attendance') MAIL_UI.type='today';
+  let html='<div class="page-head"><div><h1>Email Reminders</h1><div class="sub">Class reminders for teachers — automatic, with a manual option for teachers and students.</div></div></div>';
+  if(!conn) html+='<div class="card"><p class="form-msg err" style="margin:0;">Emails need the shared database. Connect it in Settings first.</p></div>';
+
+  html+='<div class="card"><h3>Automatic reminders <span class="status-pill '+(on?'status-connected':'status-disconnected')+'" style="margin-left:8px;">'+(on?'On':'Off')+'</span></h3>'
+    + '<p class="sub" style="margin:8px 0 12px;">When on, each teacher is emailed shortly before every class, using the lead time set on their record (Teachers page). Skipped on Sundays and holidays, and the same reminder is never sent twice. Sending happens while the app is open in an admin or teacher browser.</p>'
+    + '<div class="btn-row"><button class="btn '+(on?'btn-ghost':'btn-primary')+'" id="auto-toggle">'+(on?'Turn automatic reminders off':'Turn automatic reminders on')+'</button></div>'
+    + '<div class="sub" style="margin-top:10px;">This session: '+AUTO.sent+' automatic email'+(AUTO.sent===1?'':'s')+' queued'+(AUTO.lastAt?' · last at '+escapeHtml(new Date(AUTO.lastAt).toLocaleTimeString()):'')+'.'
+    + (AUTO.lastErr?' <span style="color:var(--danger)">Last error: '+escapeHtml(AUTO.lastErr)+'</span>':'')+'</div></div>';
+
+  html+='<div class="card"><h3>Send a reminder manually</h3>'
+    + '<div class="field" style="margin-top:12px;"><label>1. Who should get it?</label>'+btnGroup('mr-aud',[['teachers','Teachers'],['students','Students'],['all','Everyone']],MAIL_UI.aud)+'</div>'
+    + '<div class="field"><label>2. What to send</label><div id="mr-types"></div></div>'
+    + '<div id="mr-custom" style="display:'+(MAIL_UI.type==='custom'?'block':'none')+';"><div class="field"><label>Subject</label><input id="mr-subject" maxlength="150"/></div><div class="field"><label>Message</label><textarea id="mr-body" rows="4" maxlength="2000"></textarea></div></div>'
+    + '<div class="field"><label>3. Pick recipients</label>'
+    + '<div class="btn-row" style="margin-bottom:10px;"><button type="button" class="btn btn-ghost btn-sm" id="mr-selall">Select all shown</button><button type="button" class="btn btn-ghost btn-sm" id="mr-clear">Clear</button>'
+    + '<button type="button" class="btn btn-ghost btn-sm" id="mr-low" style="'+(MAIL_UI.aud==='teachers'?'display:none':'')+'">Students below 75%</button></div>'
+    + '<div class="form-row" id="mr-filters" style="'+(MAIL_UI.aud==='teachers'?'display:none':'')+'"><div class="field"><label>Student class</label><select id="mr-class"><option value="all">All classes</option>'+DB.classes.map(c=>'<option value="'+c.id+'" '+(MAIL_UI.classId===c.id?'selected':'')+'>'+escapeHtml(clsLabel(c))+'</option>').join('')+'</select></div>'
+    + '<div class="field"><label>Search student</label><input id="mr-q" placeholder="Name or reg. no." value="'+escapeHtml(MAIL_UI.q)+'"/></div></div>'
+    + '<div id="mr-recips">'+recipientsHtml()+'</div></div>'
+    + '<div class="btn-row"><button class="btn btn-primary" id="mr-send" '+(conn?'':'disabled')+'>Send reminder now</button><span class="sub" id="mr-count"></span></div>'
+    + '<div class="form-msg '+(MAIL_UI.statusBad?'err':'ok')+'" id="mr-status">'+escapeHtml(MAIL_UI.status)+'</div></div>';
+
+  html+='<div class="card"><div class="mark-toolbar"><h3>Recent emails</h3><button class="btn btn-ghost btn-sm" id="mr-refresh">Refresh</button></div><div id="mr-log">'+mailLogHtml()+'</div></div>';
+
+  html+='<div class="card"><h3>One-time setup: email delivery</h3><p class="sub">This app queues each email in your Firestore database; Firebase sends it. 1) In Firebase console open <b>Extensions</b> and install <b>Trigger Email from Firestore</b>. 2) Set the collection to <b>mail</b> and enter your SMTP details (for example a Gmail app password or any mail service). 3) In Settings, copy the updated rules (they include <b>mail</b>) into Firestore &gt; Rules and Publish. Until this is done, emails stay "Queued".</p></div>';
+  $('#admin-content').innerHTML=html;
+
+  const paintTypes=()=>{
+    const opts=[['today',"Today's classes"],['tomorrow',"Tomorrow's classes"]];
+    if(MAIL_UI.aud!=='teachers') opts.push(['attendance','Attendance summary (students)']);
+    opts.push(['custom','Custom message']);
+    $('#mr-types').innerHTML=btnGroup('mr-type',opts,MAIL_UI.type);
+    $all('#mr-type [data-v]').forEach(b=>b.addEventListener('click',()=>{ MAIL_UI.type=b.dataset.v; paintTypes(); $('#mr-custom').style.display=MAIL_UI.type==='custom'?'block':'none'; }));
+  };
+  const paintCount=()=>{ const c=selCount(); $('#mr-count').textContent=(MAIL_UI.aud!=='students'?c.t+' teacher'+(c.t===1?'':'s'):'')+(MAIL_UI.aud==='all'?' + ':'')+(MAIL_UI.aud!=='teachers'?c.s+' student'+(c.s===1?'':'s'):'')+' selected'; };
+  const paintRecips=()=>{
+    $('#mr-recips').innerHTML=recipientsHtml();
+    $all('[data-mr-t]').forEach(cb=>cb.addEventListener('change',()=>{ cb.checked?MAIL_UI.pT.add(cb.dataset.mrT):MAIL_UI.pT.delete(cb.dataset.mrT); paintCount(); }));
+    $all('[data-mr-s]').forEach(cb=>cb.addEventListener('change',()=>{ cb.checked?MAIL_UI.pS.add(cb.dataset.mrS):MAIL_UI.pS.delete(cb.dataset.mrS); paintCount(); }));
+    paintCount();
+  };
+  paintTypes(); paintRecips();
+
+  $('#auto-toggle').addEventListener('click',()=>{ setSetting('autoRemind',{on:!autoOn()}); renderAdminReminders(); });
+  $all('#mr-aud [data-v]').forEach(b=>b.addEventListener('click',()=>{
+    MAIL_UI.aud=b.dataset.v;
+    if(MAIL_UI.aud!=='students') MAIL_UI.pT=new Set(mailTeachers().filter(okMail).map(t=>t.id));
+    if(MAIL_UI.aud!=='teachers') MAIL_UI.pS=new Set(mailStudents().filter(okMail).map(s=>s.id));
+    renderAdminReminders();
+  }));
+  $('#mr-selall').addEventListener('click',()=>{
+    if(MAIL_UI.aud!=='students') mailTeachers().filter(okMail).forEach(t=>MAIL_UI.pT.add(t.id));
+    if(MAIL_UI.aud!=='teachers') mailStudents().filter(okMail).forEach(s=>MAIL_UI.pS.add(s.id));
+    paintRecips();
+  });
+  $('#mr-clear').addEventListener('click',()=>{ MAIL_UI.pT=new Set(); MAIL_UI.pS=new Set(); paintRecips(); });
+  $('#mr-low').addEventListener('click',()=>{
+    MAIL_UI.pS=new Set(mailStudents().filter(okMail).filter(s=>{ try{ const o=overallStatsForStudent(s.id); return o.held && o.pct<75; }catch(e){ return false; } }).map(s=>s.id));
+    paintRecips();
+  });
+  $('#mr-class').addEventListener('change',e=>{ MAIL_UI.classId=e.target.value; paintRecips(); });
+  $('#mr-q').addEventListener('input',e=>{ MAIL_UI.q=e.target.value; paintRecips(); });
+
+  const refreshLog=async()=>{ await loadMailLog(); const el=$('#mr-log'); if(el) el.innerHTML=mailLogHtml(); };
+  $('#mr-refresh').addEventListener('click',refreshLog);
+  $('#mr-send').addEventListener('click',async()=>{
+    if(MAIL_UI.busy) return;
+    const st=$('#mr-status'), setMsg=(t,bad)=>{ MAIL_UI.status=t; MAIL_UI.statusBad=!!bad; st.textContent=t; st.className='form-msg '+(bad?'err':'ok'); };
+    const people=[];
+    if(MAIL_UI.aud!=='students') DB.teachers.filter(t=>MAIL_UI.pT.has(t.id)&&okMail(t)).forEach(t=>people.push({p:t,role:'teacher'}));
+    if(MAIL_UI.aud!=='teachers') DB.students.filter(s=>MAIL_UI.pS.has(s.id)&&okMail(s)).forEach(s=>people.push({p:s,role:'student'}));
+    if(!people.length){ setMsg('Pick at least one recipient who has an email.',true); return; }
+    const type=MAIL_UI.type; let subject='', body='';
+    if(type==='custom'){ subject=$('#mr-subject').value.trim(); body=$('#mr-body').value.trim(); if(!subject||!body){ setMsg('Enter both a subject and a message.',true); return; } }
+    if(!confirm('Send '+people.length+' email'+(people.length===1?'':'s')+' now?')) return;
+    MAIL_UI.busy=true; setMsg('Sending…');
+    let sent=0, skipped=0, failed=0;
+    const d=new Date(); if(type==='tomorrow') d.setDate(d.getDate()+1);
+    const dayName=JS_DAY_TO_NAME[d.getDay()], dayLabel=d.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'short'});
+    for(const {p,role} of people){
+      let m=null;
+      if(type==='custom') m={subject, text:body, html:mailWrap(subject,'<p>Hello '+escapeHtml(p.name)+',</p><p>'+escapeHtml(body).replace(/\n/g,'<br>')+'</p>')};
+      else if(type==='attendance'){ if(role==='student'){ try{ m=attendanceMail(p); }catch(e){ m=null; } } }
+      else { const lines=role==='teacher'?classLinesFor(p,dayName):classLinesForClass(p.classId,dayName); if(lines.length) m=scheduleMail(p,dayLabel,lines); }
+      if(!m){ skipped++; continue; }
+      try{ await queueMail(uid('man_'),{to:normEmail(p.email),subject:m.subject,text:m.text,html:m.html,kind:type,by:'manual',teacherId:role==='teacher'?p.id:''},false); sent++; }
+      catch(e){ failed++; }
+    }
+    MAIL_UI.busy=false;
+    const parts=[sent+' queued']; if(skipped) parts.push(skipped+' skipped (nothing to send for them)'); if(failed) parts.push(failed+' failed — check the database rules');
+    setMsg(parts.join(' · ')+'.', failed>0 && !sent);
+    refreshLog();
+  });
+  if(!MAIL_UI.log.length) refreshLog();
+}
 
 /* ============================= INIT ============================= */
 function initApp(){
