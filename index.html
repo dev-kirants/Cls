@@ -5,7 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://firestore.googleapis.com; object-src 'none'; manifest-src 'self'; worker-src 'self'; frame-src blob:; media-src blob:; base-uri 'none'; form-action 'none'"/>
 <meta name="referrer" content="no-referrer"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<meta name="theme-color" content="#7A1E2C"/>
+<meta name="theme-color" content="#083F4C"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-title" content="Attendance"/>
@@ -15,20 +15,20 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png"/>
 <title>Attendance Ledger — Student Attendance Management System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
 <style>
   :root{
-    --ink:#211316;
-    --paper:#EFEDE5;
+    --ink:#0B2530;
+    --paper:#EAF1F2;
     --surface:#FFFFFF;
-    --line:#DAD4C6;
-    --muted:#726B62;
-    --primary:#7A1E2C;
-    --primary-dark:#5A141F;
-    --primary-tint:#F3E1E1;
-    --gold:#B9862E;
+    --line:#CCDADD;
+    --muted:#5C7077;
+    --primary:#0E5A6B;
+    --primary-dark:#083F4C;
+    --primary-tint:#DDEFF1;
+    --gold:#D4962A;
     --success:#2F6F4E;
     --success-tint:#E4EFE8;
     --warning:#B8860B;
@@ -36,8 +36,8 @@
     --danger:#A33636;
     --danger-tint:#F5E1DF;
     --radius:4px;
-    --font-serif:'Source Serif 4', Georgia, serif;
-    --font-sans:'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    --font-serif:'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+    --font-sans:'DM Sans', system-ui, -apple-system, sans-serif;
   }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -55,11 +55,11 @@
   @media (max-width:860px){ .login-wrap{grid-template-columns:1fr;} }
   .login-hero{background:var(--ink); color:var(--paper); padding:64px 56px; display:flex; flex-direction:column; justify-content:center; gap:22px;}
   .login-hero .eyebrow{color:var(--gold); font-weight:600; font-size:0.85rem; letter-spacing:0.02em;}
-  .login-hero h1{font-size:clamp(2.1rem,4vw,3.2rem); line-height:1.12; font-weight:600; max-width:11ch; color:#F6F2EA;}
-  .login-hero p{color:#D9D2C6; max-width:42ch; line-height:1.65; font-size:1rem;}
+  .login-hero h1{font-size:clamp(2.1rem,4vw,3.2rem); line-height:1.12; font-weight:600; max-width:11ch; color:#EAF6F7;}
+  .login-hero p{color:#CFE3E6; max-width:42ch; line-height:1.65; font-size:1rem;}
   .ledger-mark{display:flex; flex-direction:column; gap:14px; margin-top:8px;}
   .ledger-row{display:flex; align-items:center; gap:12px;}
-  .ledger-dot{width:13px; height:13px; border-radius:50%; border:2px solid #6b5d52; flex-shrink:0;}
+  .ledger-dot{width:13px; height:13px; border-radius:50%; border:2px solid #4B7C86; flex-shrink:0;}
   .ledger-dot.done{background:var(--gold); border-color:var(--gold);}
   .ledger-line{height:2px; background:rgba(255,255,255,0.16); flex:1;}
   .ledger-line.short{width:55%; flex:none;}
@@ -185,6 +185,11 @@
   .cal-cell.cal-none{color:var(--muted); background:var(--paper);}
   .cal-cell.cal-success{background:var(--success-tint); border-color:var(--success);}
   .cal-cell.cal-warning{background:var(--warning-tint); border-color:var(--warning);}
+  .cal-cell.cal-holiday{background:#E9E2F3; border-color:#6B4FA0; color:#3F2A6E;}
+  .cal-cell.cal-event{background:#DCEAF7; border-color:#2F6FA3; color:#1D4A73;}
+  .cal-hname{font-size:0.58rem; font-weight:600; line-height:1.1; text-align:center; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:0 2px;}
+  .cal-hmark{position:absolute; top:3px; right:4px; width:7px; height:7px; border-radius:50%;}
+  .cal-cell{position:relative;}
   .cal-cell.cal-danger{background:var(--danger-tint); border-color:var(--danger);}
   .cal-daynum{font-size:0.8rem; font-weight:600;}
   .cal-pct{font-size:0.66rem; font-weight:600;}
@@ -234,12 +239,12 @@
   .status-pill{display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:100px; font-size:0.8rem; font-weight:600;}
   .status-connected{background:var(--success-tint); color:var(--success);}
   .status-disconnected{background:var(--danger-tint); color:var(--danger);}
-  .sql-box{background:var(--ink); color:#e8e2d6; padding:16px; border-radius:var(--radius); font-family:monospace; font-size:0.76rem; white-space:pre; overflow-x:auto; max-height:320px; overflow-y:auto;}
+  .sql-box{background:var(--ink); color:#DCEBEE; padding:16px; border-radius:var(--radius); font-family:monospace; font-size:0.76rem; white-space:pre; overflow-x:auto; max-height:320px; overflow-y:auto;}
 
   /* ---------- Print ---------- */
 
   /* ---------- File viewer popup ---------- */
-  .fv-backdrop{position:fixed; inset:0; background:rgba(33,19,22,.62); display:none; align-items:center; justify-content:center; padding:20px; z-index:1000;}
+  .fv-backdrop{position:fixed; inset:0; background:rgba(11,37,48,.62); display:none; align-items:center; justify-content:center; padding:20px; z-index:1000;}
   .fv-backdrop.open{display:flex;}
   .fv-modal{background:var(--surface); border-radius:var(--radius); width:min(960px,100%); height:min(86vh,760px); display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35); overflow:hidden;}
   .fv-head{display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--line);}
@@ -262,9 +267,13 @@
 
   /* ---------- Reminder toast ---------- */
   #toast-host{position:fixed; right:18px; bottom:18px; display:flex; flex-direction:column; gap:10px; z-index:1100; max-width:min(360px,calc(100vw - 36px));}
-  .toast{background:var(--ink); color:#F6F2EA; border-left:4px solid var(--gold); border-radius:var(--radius); padding:12px 14px; font-size:.86rem; line-height:1.45; box-shadow:0 10px 30px rgba(0,0,0,.3);}
+  .toast{background:var(--ink); color:#EAF6F7; border-left:4px solid var(--gold); border-radius:var(--radius); padding:12px 14px; font-size:.86rem; line-height:1.45; box-shadow:0 10px 30px rgba(0,0,0,.3);}
   .toast b{display:block; font-family:var(--font-serif); margin-bottom:2px;}
-  .toast button{margin-top:8px; background:transparent; border:1px solid #6b5d52; color:#F6F2EA; border-radius:var(--radius); padding:3px 10px; cursor:pointer; font-size:.75rem;}
+  .toast button{margin-top:8px; background:transparent; border:1px solid #4B7C86; color:#EAF6F7; border-radius:var(--radius); padding:3px 10px; cursor:pointer; font-size:.75rem;}
+  .file-chip.file-rm{padding:5px 9px; color:var(--danger); border-color:var(--danger); background:var(--danger-tint); line-height:1;}
+  .file-chip.file-rm:hover{background:var(--danger); color:#fff;}
+  .btn-danger{background:transparent; border-color:var(--danger); color:var(--danger);}
+  .btn-danger:hover{background:var(--danger); color:#fff;}
   .contact-line{font-size:.8rem; line-height:1.5; word-break:break-all;}
   .contact-line .muted{color:var(--muted);}
   .form-msg{font-size:.82rem; margin-top:10px;}
@@ -276,10 +285,10 @@
   }
 
   :root{--radius:12px;}
-  .card,.stat-card{box-shadow:0 6px 24px rgba(90,20,31,.07);}
-  .login-hero{background:linear-gradient(150deg,#5A141F,#7A1E2C 55%,#B9862E); color:#fff;} .login-hero h1,.login-hero p,.login-hero .eyebrow{color:#fff;}
+  .card,.stat-card{box-shadow:0 6px 24px rgba(8,63,76,.08);}
+  .login-hero{background:linear-gradient(150deg,#083F4C,#0E5A6B 55%,#D4962A); color:#fff;} .login-hero h1,.login-hero p,.login-hero .eyebrow{color:#fff;}
   .brand-logo{height:56px; max-width:200px; object-fit:contain; background:#fff; border-radius:10px; padding:4px; margin-right:10px; vertical-align:middle;} .topbar .brand-logo{height:34px;}
-  .brand-name{font-family:var(--font-serif); font-size:1.7rem; margin:10px 0 2px; color:#fff;} .brand-tag{color:#F3D9A4; font-weight:600;} .brand-details{color:#fff; opacity:.9; font-size:.9rem;}
+  .brand-name{font-family:var(--font-serif); font-size:1.7rem; margin:10px 0 2px; color:#fff;} .brand-tag{color:#F6DFA8; font-weight:600;} .brand-details{color:#fff; opacity:.9; font-size:.9rem;}
   .day-chips{display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 16px;} .day-chip{border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 18px; font-weight:600; cursor:pointer;} .day-chip.on{background:var(--primary); color:#fff; border-color:var(--primary);}
   .today-grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr)) !important;} .class-btn{min-height:150px; box-shadow:0 4px 14px rgba(0,0,0,.06);} .class-btn .cb-subject{font-size:1.45rem;}
   .pc-row{display:inline-flex; align-items:center; gap:6px; margin:4px 14px 4px 0;} .hm-table{width:100%; border-collapse:separate; border-spacing:4px; text-align:center;} .hm{border-radius:6px; padding:9px 4px; font-size:.8rem; font-weight:600;}
@@ -293,6 +302,33 @@
   .kpi{border-left:4px solid var(--primary);} .kpi.good{border-left-color:var(--success);} .kpi.warn{border-left-color:var(--warning);} .kpi.bad{border-left-color:var(--danger);}
   .risk-row{align-items:center; gap:12px;} .risk-row small{display:block; color:var(--muted); font-size:.72rem;}
 
+
+  /* ================= New theme: deep teal + amber ================= */
+  :root{--radius:14px;}
+  h1,h2,h3{letter-spacing:-.015em;}
+  body{background:radial-gradient(900px 520px at 100% -8%, rgba(14,90,107,.13), transparent 62%), radial-gradient(800px 480px at -8% 108%, rgba(212,150,42,.12), transparent 60%), var(--paper); background-attachment:fixed;}
+  .login-hero{position:relative; overflow:hidden; background:radial-gradient(520px 360px at 85% 8%, rgba(212,150,42,.30), transparent 65%), linear-gradient(158deg,#06242E 0%,#0A4654 52%,#13808A 100%);}
+  .login-hero::before{content:''; position:absolute; inset:0; background:repeating-linear-gradient(0deg, rgba(255,255,255,.055) 0 1px, transparent 1px 44px); pointer-events:none;}
+  .login-hero > *{position:relative;}
+  .login-card{box-shadow:0 18px 50px rgba(8,63,76,.14);}
+  .topbar{background:rgba(255,255,255,.86); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border-bottom-color:rgba(14,90,107,.14);}
+  .sidebar{background:linear-gradient(180deg,#0B3340 0%,#072630 100%); border-right:none; border-bottom:none;}
+  .side-title{color:#FFFFFF;} .side-sub{color:#8FB5BC;}
+  .sidebar-link{color:#B7D0D5;}
+  .sidebar-link:hover{background:rgba(255,255,255,.08); color:#FFFFFF;}
+  .sidebar-link.active{background:rgba(255,255,255,.14); color:#FFFFFF; box-shadow:inset 3px 0 0 var(--gold);}
+  .side-group{color:#E8BC6A; border-top-color:rgba(255,255,255,.14);}
+  .card,.stat-card,.session-card,.holiday-row{border-color:rgba(14,90,107,.14);}
+  .card,.stat-card{box-shadow:0 8px 28px rgba(8,63,76,.08);}
+  .btn-primary{background:linear-gradient(180deg,#127084,#0E5A6B); box-shadow:0 2px 8px rgba(14,90,107,.28);}
+  .btn-primary:hover{background:linear-gradient(180deg,#0E5A6B,#083F4C);}
+  .btn-ghost:hover{background:#E1EEF0;}
+  .table th{border-bottom-color:var(--primary);}
+  .table tr:hover td{background:#EFF6F7;}
+  .class-btn:hover{box-shadow:0 10px 26px rgba(8,63,76,.14);}
+  .toast{border-left-color:var(--gold);}
+  .kpi{border-left-color:var(--primary);}
+  .trend-bar{background:linear-gradient(180deg,#17808A,#0E5A6B);}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -698,14 +734,14 @@ function overallStatsAll(){
 }
 
 /* ---- clearer visuals: shared helpers ---- */
-const CLR = {good:'#2F6F4E', watch:'#B8860B', bad:'#A33636', brand:'#7A1E2C', gold:'#B9862E', grid:'#E6E1D5'};
+const CLR = {good:'#2F6F4E', watch:'#B8860B', bad:'#A33636', brand:'#0E5A6B', gold:'#D4962A', grid:'#DDE7E9'};
 function clrFor(p){ return p>=85?CLR.good:(p>=75?CLR.watch:CLR.bad); }
 /* draws a dashed "75% required" guide on Chart.js bar/line charts */
 const targetLine = {id:'targetLine', afterDatasetsDraw(ch, a, o){
   if(!o || o.value==null) return; const {ctx, chartArea:ca, scales} = ch, horiz = ch.options.indexAxis==='y';
   const px = (horiz?scales.x:scales.y).getPixelForValue(o.value); ctx.save(); ctx.setLineDash([6,4]); ctx.strokeStyle=CLR.gold; ctx.lineWidth=2; ctx.beginPath();
   if(horiz){ ctx.moveTo(px,ca.top); ctx.lineTo(px,ca.bottom); } else { ctx.moveTo(ca.left,px); ctx.lineTo(ca.right,px); }
-  ctx.stroke(); ctx.fillStyle=CLR.gold; ctx.font='600 11px IBM Plex Sans, sans-serif';
+  ctx.stroke(); ctx.fillStyle=CLR.gold; ctx.font='600 11px DM Sans, sans-serif';
   if(horiz) ctx.fillText('75% required', px+4, ca.top+11); else ctx.fillText('75% required', ca.right-72, px-5); ctx.restore(); }};
 /* what should this student do about a subject? */
 function planText(held, present){
@@ -753,6 +789,10 @@ function daysInMonthList(prefix){
   return out;
 }
 
+function holidaysOn(dateStr){ return DB.holidays.filter(h=>h.date===dateStr); }
+function holidayNoteHtml(dateStr){
+  return holidaysOn(dateStr).map(h=>'<div class="notice notice-warning" style="margin-bottom:12px;"><b>'+escapeHtml(h.type)+' · '+escapeHtml(h.name)+'</b></div>').join('');
+}
 /* dayStatusFn(dateStr) should return null (no class held) or {held, present, pct} */
 function calendarHtml(prefix, dayStatusFn, selectedDate){
   const {year, month} = monthMeta(prefix);
@@ -764,6 +804,9 @@ function calendarHtml(prefix, dayStatusFn, selectedDate){
   daysInMonthList(prefix).forEach(dateStr=>{
     const d = Number(dateStr.slice(-2));
     const info = dayStatusFn(dateStr);
+    const hol = holidaysOn(dateStr), h0 = hol[0];
+    const hCls = h0 ? (hol.some(x=>x.type==='Holiday') ? 'cal-holiday' : 'cal-event') : '';
+    const hTitle = hol.map(x=>x.type+': '+x.name).join(' | ');
     let cls = 'cal-cell';
     let label = '';
     if(info && info.held){
@@ -771,7 +814,11 @@ function calendarHtml(prefix, dayStatusFn, selectedDate){
       cls += ' cal-'+st.cls+' cal-clickable';
       if(dateStr===selectedDate) cls += ' cal-selected';
       label = '<span class="cal-pct">'+info.pct+'%</span>';
-      cells += '<button type="button" class="'+cls+'" data-caldate="'+dateStr+'"><span class="cal-daynum">'+d+'</span>'+label+'</button>';
+      if(h0) label += '<span class="cal-hmark" style="background:'+(hCls==='cal-holiday'?'#6B4FA0':'#2F6FA3')+'"></span>';
+      cells += '<button type="button" class="'+cls+'" data-caldate="'+dateStr+'"'+(hTitle?' title="'+escapeHtml(hTitle)+'"':'')+'><span class="cal-daynum">'+d+'</span>'+label+'</button>';
+    } else if(h0){
+      cls += ' '+hCls+' cal-clickable'+(dateStr===selectedDate?' cal-selected':'');
+      cells += '<button type="button" class="'+cls+'" data-caldate="'+dateStr+'" title="'+escapeHtml(hTitle)+'"><span class="cal-daynum">'+d+'</span><span class="cal-hname">'+escapeHtml(h0.name)+'</span></button>';
     } else {
       cells += '<div class="cal-cell cal-none"><span class="cal-daynum">'+d+'</span></div>';
     }
@@ -780,6 +827,8 @@ function calendarHtml(prefix, dayStatusFn, selectedDate){
     + '<div><span class="dot" style="background:var(--success)"></span>Good (≥85%)</div>'
     + '<div><span class="dot" style="background:var(--warning)"></span>Watch (75–84%)</div>'
     + '<div><span class="dot" style="background:var(--danger)"></span>Critical (&lt;75%)</div>'
+    + '<div><span class="dot" style="background:#6B4FA0"></span>Holiday</div>'
+    + '<div><span class="dot" style="background:#2F6FA3"></span>Event</div>'
     + '<div><span class="dot" style="background:var(--line)"></span>No class held</div>'
     + '</div><div class="cal-grid" style="margin-top:12px;">' + cells + '</div>';
 }
@@ -834,6 +883,52 @@ async function saveSession(subjectId, classId, teacherId, date, period, topics, 
   if(BACKEND_ON()) return (await syncUpsert('sessions', rec)) !== false;
   return 'local';
 }
+/* ---- Removing shared content (whole entry, or a single file) ---- */
+async function deleteSessionFileChunks(files){
+  if(!BACKEND_ON()) return;
+  const c = getSupabaseCfg(), w = [];
+  (files||[]).forEach(f=>{ if(f && f.fid) for(let i=0;i<(f.chunks||0);i++) w.push({delete:fsRoot(c)+'/sessionfiles/'+f.fid+'_'+i}); });
+  try{ for(const part of chunkWrites(w)) await fsPost(c, ':commit', {writes:part}); }catch(err){ console.error('[sync] chunk cleanup failed', err); }
+}
+async function removeSessionEntry(id){
+  const rec = DB.sessions.find(s=>s.id===id); if(!rec) return true;
+  if(BACKEND_ON() && (await syncDelete('sessions', id)) === false) return false;
+  DB.sessions = DB.sessions.filter(s=>s.id!==id);
+  deleteSessionFileChunks(rec.files);
+  return true;
+}
+async function removeSessionFile(id, idx){
+  const rec = DB.sessions.find(s=>s.id===id); if(!rec || !rec.files || !rec.files[idx]) return true;
+  const gone = rec.files[idx], left = rec.files.filter((_,i)=>i!==idx);
+  if(!rec.topics && !left.length) return removeSessionEntry(id);       // nothing would remain - drop the entry
+  const prev = rec.files; rec.files = left;
+  if(BACKEND_ON() && (await syncUpsert('sessions', rec)) === false){ rec.files = prev; return false; }
+  deleteSessionFileChunks([gone]);
+  return true;
+}
+function refreshAfterRemove(){
+  if(state.role==='teacher') renderTeacherContent();
+  else if(state.role==='admin') renderAdminContent();
+}
+document.addEventListener('click', async e=>{
+  const rf = e.target.closest('[data-rmfile]');
+  if(rf){
+    const id = rf.dataset.rmfile, idx = Number(rf.dataset.rmidx);
+    if(!confirm('Remove this file? Students will no longer see it.')) return;
+    rf.disabled = true;
+    if(await removeSessionFile(id, idx)) refreshAfterRemove(); else rf.disabled = false;
+    return;
+  }
+  const rd = e.target.closest('[data-rmdraft]');
+  if(rd){ state.sessionDraft.files.splice(Number(rd.dataset.rmdraft), 1); refreshAfterRemove(); return; }
+  const rs = e.target.closest('[data-rmsession]');
+  if(rs){
+    if(!confirm('Delete this class content (notes and all attached files)? Students will no longer see it. This cannot be undone.')) return;
+    rs.disabled = true;
+    if(await removeSessionEntry(rs.dataset.rmsession)) refreshAfterRemove(); else rs.disabled = false;
+  }
+});
+
 /* ---- File viewer popup: opens teacher-shared files on the same page, with a Download button ---- */
 const FILE_REG = [];                                   // chips refer to files by index into this list
 function dataUrlToBlob(full, nameHint){
@@ -961,13 +1056,18 @@ function readFilesAsDataUrls(fileList){
   }));
 }
 
-function fileChipListHtml(files){
+/* rm (optional): {sid:'<session id>'} adds a remove button to each saved file, {draft:true} to files not yet uploaded */
+function fileChipListHtml(files, rm){
   if(!files || !files.length) return '';
   return '<div class="file-chip-list">' + files.map((f,i)=>{
     const nm = escapeHtml(f.name||'file'), kb = f.size ? ' · '+(f.size>1048576?(f.size/1048576).toFixed(1)+' MB':Math.max(1,Math.round(f.size/1024))+' KB') : '';
+    let chip;
     if(f.dataUrl || f.fid){ const ref = FILE_REG.push(f)-1;
-      return '<button type="button" class="file-chip" data-fref="'+ref+'" title="Click to view">📎 '+nm+kb+'</button>'; }
-    return '<span class="file-chip" title="This file was shared before file sharing was enabled. Ask the teacher to attach it again.">📎 '+nm+' (re-upload needed)</span>';
+      chip = '<button type="button" class="file-chip" data-fref="'+ref+'" title="Click to view">📎 '+nm+kb+'</button>'; }
+    else chip = '<span class="file-chip" title="This file was shared before file sharing was enabled. Ask the teacher to attach it again.">📎 '+nm+' (re-upload needed)</span>';
+    if(rm && rm.sid) chip += '<button type="button" class="file-chip file-rm" data-rmfile="'+escapeHtml(rm.sid)+'" data-rmidx="'+i+'" title="Remove this file" aria-label="Remove '+nm+'">✕</button>';
+    else if(rm && rm.draft) chip += '<button type="button" class="file-chip file-rm" data-rmdraft="'+i+'" title="Remove this file" aria-label="Remove '+nm+'">✕</button>';
+    return rm ? '<span style="display:inline-flex;gap:4px;align-items:center;">'+chip+'</span>' : chip;
   }).join('') + '</div>';
 }
 
@@ -1055,7 +1155,7 @@ function teacherProfileCardHtml(t){
 }
 function bindTeacherProfile(t){
   const msg = (txt, ok)=>{ const m=$('#p-msg'); m.textContent = txt; m.className = 'form-msg '+(ok?'ok':'err'); };
-  const nb = $('#p-notify'); if(nb) nb.addEventListener('click', ()=>{ Notification.requestPermission().then(()=>renderTeacherDashboard(t)); });
+  const nb = $('#p-notify'); if(nb) nb.addEventListener('click', ()=>{ Notification.requestPermission().then(()=>renderTeacherProfile(t)); });
   $('#p-save').addEventListener('click', async ()=>{
     if(lockLeft()>0){ msg('Too many wrong passwords. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
     const c = readContact($('#p-email'), $('#p-phone'), $('#p-remind'), t.id, true);
@@ -1426,7 +1526,7 @@ function renderStudentDashboard(){
 
   $('#student-content').innerHTML = html;
   if(!window.Chart){ return; }
-  new Chart($('#ch-trend'), {type:'line', data:{labels:trend.map(m=>m.name.slice(0,3)), datasets:[{label:'Attendance %', data:trend.map(m=>m.pct), borderColor:CLR.brand, backgroundColor:'rgba(122,30,44,.12)', fill:true, tension:.3, pointRadius:5, pointBackgroundColor:trend.map(m=>clrFor(m.pct))}]},
+  new Chart($('#ch-trend'), {type:'line', data:{labels:trend.map(m=>m.name.slice(0,3)), datasets:[{label:'Attendance %', data:trend.map(m=>m.pct), borderColor:CLR.brand, backgroundColor:'rgba(14,90,107,.12)', fill:true, tension:.3, pointRadius:5, pointBackgroundColor:trend.map(m=>clrFor(m.pct))}]},
     options:{maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}}, scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}, grid:{color:CLR.grid}}, x:{grid:{display:false}}}}, plugins:[targetLine]});
   const subs = overall.subjects, pcs = subs.map(su=>subjectStatsForStudent(student.id, su.id).pct);
   new Chart($('#ch-stu'), {type:'bar', data:{labels:subs.map(su=>su.name), datasets:[{label:'Attendance %', data:pcs, backgroundColor:pcs.map(clrFor), borderRadius:4, barThickness:22}]},
@@ -1466,8 +1566,8 @@ function renderStudentCalendar(){
 function studentCalDetailHtml(student, dateStr){
   if(!dateStr) return '<h3>Select a day</h3><p class="sub">Click any coloured day above to see that day\'s subject-wise attendance.</p>';
   const day = studentDayStats(student.id, dateStr);
-  if(!day) return '<h3>'+dateStr+'</h3><p class="sub">No classes were held on this day.</p>';
-  return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' classes attended ('+day.pct+'%)</h3>'
+  if(!day) return '<h3>'+dateStr+'</h3>'+holidayNoteHtml(dateStr)+'<p class="sub">No classes were held on this day.</p>';
+  return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' classes attended ('+day.pct+'%)</h3>'+holidayNoteHtml(dateStr)
     + '<div class="cal-detail-list">' + day.recs.map(r=>{
         const su = DB.subjects.find(x=>x.id===r.subjectId);
         return '<div class="cal-detail-row"><span>Period '+r.period+' · '+(su?escapeHtml(su.name):'—')+'</span>'
@@ -1478,7 +1578,7 @@ function studentCalDetailHtml(student, dateStr){
 /* ============================= TEACHER DASHBOARD ============================= */
 function renderTeacherSidebar(){
   const teacher = DB.teachers.find(t=>t.id===state.teacherId);
-  const tabs = [['dashboard','Dashboard'],['timetable','My Timetable'],['mark','Mark attendance'],['calendar','Calendar'],['records','Attendance records'],['content','My Content'],['reports','Reports']];
+  const tabs = [['dashboard','Dashboard'],['timetable','My Timetable'],['mark','Mark attendance'],['calendar','Calendar'],['records','Attendance records'],['content','My Content'],['reports','Reports'],['holidays','Academic Calendar'],['profile','My Contact']];
   $('#teacher-sidebar').innerHTML = '<div class="side-title">'+escapeHtml(teacher.name)+'</div><div class="side-sub">'+escapeHtml(teacher.teacherId)+'</div>'
     + tabs.map(t=>'<button class="sidebar-link '+(state.teacherTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#teacher-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
@@ -1498,6 +1598,8 @@ function renderTeacherContent(){
   if(state.teacherTab==='records') return renderTeacherRecords(teacher);
   if(state.teacherTab==='content') return renderTeacherContentTab(teacher);
   if(state.teacherTab==='reports') return renderTeacherReports(teacher);
+  if(state.teacherTab==='holidays') return renderHolidayListView('teacher');
+  if(state.teacherTab==='profile') return renderTeacherProfile(teacher);
 }
 
 function openClassFromButton(subjectId, period, date){
@@ -1550,14 +1652,19 @@ function renderTeacherDashboard(teacher){
       }).join('') || '<tr><td colspan="4" class="empty">No subjects assigned yet.</td></tr>'
     + '</tbody></table></div>';
 
-  html += teacherProfileCardHtml(teacher);
   $('#teacher-content').innerHTML = html;
-  bindTeacherProfile(teacher);
   checkClassReminders();
   $all('[data-open-subject]').forEach(btn=>btn.addEventListener('click', ()=>{
     openClassFromButton(btn.dataset.openSubject, Number(btn.dataset.openPeriod), btn.dataset.openDate);
   }));
   $all('.day-chip').forEach(b=>b.addEventListener('click', ()=>{ state.teacherDay = b.dataset.day; renderTeacherDashboard(teacher); }));
+}
+
+function renderTeacherProfile(teacher){
+  const html = '<div class="page-head"><div><h1>My Contact</h1><div class="sub">Update your email, phone number and class-reminder time. Your name, ID and subjects are managed by the administrator.</div></div></div>'
+    + teacherProfileCardHtml(teacher);
+  $('#teacher-content').innerHTML = html;
+  bindTeacherProfile(teacher);
 }
 
 function renderTeacherTimetable(teacher){
@@ -1599,8 +1706,9 @@ function renderTeacherContentTab(teacher){
       const su = DB.subjects.find(x=>x.id===s.subjectId);
       return '<div class="session-card"><div class="sc-head"><span class="sc-title">'+(su?su.name:'—')+' · Period '+s.period+'</span><span class="sc-date">'+s.date+'</span></div>'
         + (s.topics ? '<div class="sc-topics">'+escapeHtml(s.topics)+'</div>' : '<p class="sub" style="margin:6px 0;">No written notes.</p>')
-        + fileChipListHtml(s.files)
-        + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-ghost btn-sm" data-edit-session="'+su.id+'" data-edit-date="'+s.date+'" data-edit-period="'+s.period+'">Edit</button></div>'
+        + fileChipListHtml(s.files, {sid:s.id})
+        + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-ghost btn-sm" data-edit-session="'+su.id+'" data-edit-date="'+s.date+'" data-edit-period="'+s.period+'">Edit</button>'
+        + '<button class="btn btn-danger btn-sm" data-rmsession="'+s.id+'">Delete</button></div>'
         + '</div>';
     }).join('');
   }
@@ -1629,6 +1737,7 @@ function renderTeacherMark(teacher){
     return;
   }
 
+  html += holidayNoteHtml(state.markDate);
   html += '<div class="card"><div class="form-row">'
     + '<div class="field"><label>Subject</label><select id="mark-subject">' + subjects.map(su=>'<option value="'+su.id+'" '+(su.id===state.markSubject?'selected':'')+'>'+escapeHtml(su.name)+'</option>').join('') + '</select></div>'
     + '<div class="field"><label>Date</label><input type="date" id="mark-date" value="'+state.markDate+'"/></div>'
@@ -1659,9 +1768,11 @@ function renderTeacherMark(teacher){
     html += '<div class="card"><h3>Class notes &amp; files for students</h3><p class="sub" style="margin-bottom:12px;">Notes for <b>'+escapeHtml(subject.name)+'</b> · '+state.markDate+' · Period '+state.markPeriod+'. Students of this class see them under <b>My Content</b> within a few seconds of saving. This is saved separately from attendance.'+(existingSession?' <span class="badge badge-success">Already shared</span>':'')+'</p>'
       + '<div class="field"><label>Topics covered</label><textarea id="session-topics" placeholder="Topics covered in this class">'+escapeHtml(draftTopics)+'</textarea></div>'
       + '<div class="field"><label>Attach files (slides, notes, worksheets) · max 2 MB each</label><input type="file" id="session-files" multiple/></div>'
-      + (savedFiles.length?'<div class="sub">Already shared:</div>'+fileChipListHtml(savedFiles):'')
-      + (state.sessionDraft.files.length?'<div class="sub" style="margin-top:8px;">Ready to upload (press Save):</div>'+fileChipListHtml(state.sessionDraft.files):'')
-      + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="save-session-btn">Save &amp; share with students</button><span id="session-confirm" class="save-confirm"></span></div>'
+      + (savedFiles.length?'<div class="sub">Already shared (✕ removes a file):</div>'+fileChipListHtml(savedFiles, {sid:existingSession.id}):'')
+      + (state.sessionDraft.files.length?'<div class="sub" style="margin-top:8px;">Ready to upload (press Save):</div>'+fileChipListHtml(state.sessionDraft.files, {draft:true}):'')
+      + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-primary btn-sm" id="save-session-btn">Save &amp; share with students</button>'
+      + (existingSession?'<button class="btn btn-danger btn-sm" data-rmsession="'+existingSession.id+'">Delete notes &amp; files</button>':'')
+      + '<span id="session-confirm" class="save-confirm"></span></div>'
       + '</div>';
   }
 
@@ -1779,8 +1890,8 @@ function renderTeacherCalendar(teacher){
   function teacherCalDetailHtml(dateStr){
     if(!dateStr) return '<h3>Select a day</h3><p class="sub">Click any coloured day above to see that day\'s attendance by student.</p>';
     const day = teacherDayStats(teacher, state.teacherCalSubject, dateStr);
-    if(!day) return '<h3>'+dateStr+'</h3><p class="sub">No classes were held on this day.</p>';
-    return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' present ('+day.pct+'%)</h3>'
+    if(!day) return '<h3>'+dateStr+'</h3>'+holidayNoteHtml(dateStr)+'<p class="sub">No classes were held on this day.</p>';
+    return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' present ('+day.pct+'%)</h3>'+holidayNoteHtml(dateStr)
       + '<div class="cal-detail-list">' + day.recs.map(r=>{
           const s = DB.students.find(x=>x.id===r.studentId);
           const su = DB.subjects.find(x=>x.id===r.subjectId);
@@ -1895,7 +2006,7 @@ function renderTeacherReports(teacher){
   $('#print-report-btn').addEventListener('click', ()=>{
     const {subject, month, rows} = subjectMonthMatrix(state.reportSubject, state.reportMonth);
     const cls = DB.classes.find(c=>c.id===subject.classId);
-    const html2 = '<h2 style="font-family:\'Source Serif 4\',serif;margin-bottom:2px;">Attendance Ledger College</h2>'
+    const html2 = '<h2 style="font-family:\'Bricolage Grotesque\',sans-serif;margin-bottom:2px;">Attendance Ledger College</h2>'
       + '<div style="color:#555;margin-bottom:16px;">'+cls.course+' · Semester '+cls.semester+' · Section '+cls.section+'</div>'
       + '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
       + '<tr><td><strong>Subject:</strong> '+subject.name+' ('+subject.code+')</td><td><strong>Teacher:</strong> '+escapeHtml(teacher.name)+'</td></tr>'
@@ -1911,7 +2022,7 @@ function renderTeacherReports(teacher){
 
 /* ============================= ADMIN DASHBOARD ============================= */
 function renderAdminSidebar(){
-  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['timetable','Timetable'],['holidays','Holidays'],['attendance','Attendance'],['calendar','Calendar'],['analytics','Analytics'],['@View only'],['details','Check Details'],['@Notifications'],['reminders','Email Reminders'],['@System'],['settings','Settings']];
+  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['timetable','Timetable'],['holidays','Holidays'],['attendance','Attendance'],['calendar','Calendar'],['analytics','Analytics'],['content','Class Content'],['@Notifications'],['reminders','Email Reminders'],['@System'],['settings','Settings']];
   $('#admin-sidebar').innerHTML = '<div class="side-title">Administrator</div><div class="side-sub">Full access</div>'
     + tabs.map(t=>t[0].charAt(0)==='@' ? '<div class="side-group">'+t[0].slice(1)+'</div>' : '<button class="sidebar-link '+(state.adminTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#admin-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
@@ -1929,9 +2040,42 @@ function renderAdminContent(){
     subjects:renderAdminSubjects, classes:renderAdminClasses, attendance:renderAdminAttendance,
     calendar:renderAdminCalendar, analytics:renderAdminAnalytics,
     timetable:renderAdminTimetable, holidays:renderAdminHolidays, settings:renderAdminSettings,
-    details:renderAdminDetails, reminders:renderAdminReminders
+    content:renderAdminContentTab, reminders:renderAdminReminders
   };
-  map[state.adminTab]();
+  (map[state.adminTab] || renderAdminOverview)();
+}
+
+/* --- Class Content (notes & files shared by teachers): review and remove --- */
+const ADC = {classId:'all', teacherId:'all', q:''};
+function adminContentListHtml(){
+  const q = ADC.q.trim().toLowerCase();
+  const list = DB.sessions.filter(s=>(s.topics || (s.files&&s.files.length))
+      && (ADC.classId==='all' || s.classId===ADC.classId)
+      && (ADC.teacherId==='all' || s.teacherId===ADC.teacherId)
+      && (!q || (s.topics||'').toLowerCase().includes(q) || (s.files||[]).some(f=>(f.name||'').toLowerCase().includes(q)) || ((DB.subjects.find(x=>x.id===s.subjectId)||{}).name||'').toLowerCase().includes(q)))
+    .slice().sort((a,b)=> a.date<b.date?1:(a.date>b.date?-1:b.period-a.period));
+  if(!list.length) return '<div class="card"><p class="empty">No class content found.</p></div>';
+  return '<div class="sub" style="margin-bottom:10px;">'+list.length+' entr'+(list.length===1?'y':'ies')+'</div>' + list.map(s=>{
+    const su = DB.subjects.find(x=>x.id===s.subjectId), t = DB.teachers.find(x=>x.id===s.teacherId), c = DB.classes.find(x=>x.id===s.classId);
+    return '<div class="session-card"><div class="sc-head"><span class="sc-title">'+escapeHtml(su?su.name:'—')+' · '+escapeHtml(clsLabel(c))+'</span>'
+      + '<span class="sc-date">'+escapeHtml(s.date)+' · Period '+escapeHtml(s.period)+(t?' · '+escapeHtml(t.name):'')+'</span></div>'
+      + (s.topics ? '<div class="sc-topics">'+escapeHtml(s.topics)+'</div>' : '<p class="sub" style="margin:6px 0;">No written notes.</p>')
+      + fileChipListHtml(s.files, {sid:s.id})
+      + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-danger btn-sm" data-rmsession="'+escapeHtml(s.id)+'">Delete entry</button></div></div>';
+  }).join('');
+}
+function renderAdminContentTab(){
+  let html = '<div class="page-head"><div><h1>Class Content</h1><div class="sub">Notes and files teachers have shared with students. Remove an entry (or just one file) here; it disappears for students too.</div></div></div>';
+  html += '<div class="card"><div class="form-row">'
+    + '<div class="field"><label>Class</label><select id="adc-class"><option value="all">All classes</option>'+DB.classes.map(c=>'<option value="'+c.id+'" '+(ADC.classId===c.id?'selected':'')+'>'+escapeHtml(clsLabel(c))+'</option>').join('')+'</select></div>'
+    + '<div class="field"><label>Teacher</label><select id="adc-teacher"><option value="all">All teachers</option>'+DB.teachers.map(t=>'<option value="'+t.id+'" '+(ADC.teacherId===t.id?'selected':'')+'>'+escapeHtml(t.name)+'</option>').join('')+'</select></div>'
+    + '<div class="field"><label>Search</label><input id="adc-q" placeholder="Subject, topic or file name" value="'+escapeHtml(ADC.q)+'"/></div>'
+    + '</div></div><div id="adc-list">'+adminContentListHtml()+'</div>';
+  $('#admin-content').innerHTML = html;
+  const upd = ()=>{ $('#adc-list').innerHTML = adminContentListHtml(); };
+  $('#adc-class').addEventListener('change', e=>{ ADC.classId = e.target.value; upd(); });
+  $('#adc-teacher').addEventListener('change', e=>{ ADC.teacherId = e.target.value; upd(); });
+  $('#adc-q').addEventListener('input', e=>{ ADC.q = e.target.value; upd(); });
 }
 
 /* --- Timetable --- */
@@ -2711,7 +2855,7 @@ function printAdminAttendance(){
   const held = recs.length;
   const present = recs.filter(r=>r.status==='P').length;
   const pct = held ? Math.round((present/held)*1000)/10 : 0;
-  const html = '<h2 style="font-family:\'Source Serif 4\',serif;margin-bottom:2px;">Attendance Ledger College</h2>'
+  const html = '<h2 style="font-family:\'Bricolage Grotesque\',sans-serif;margin-bottom:2px;">Attendance Ledger College</h2>'
     + '<div style="color:#555;margin-bottom:16px;">Administrator report · Generated '+new Date().toDateString()+'</div>'
     + '<div style="margin-bottom:12px;">'+held+' records · '+pct+'% present</div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
@@ -2762,14 +2906,14 @@ function renderAdminCalendar(){
   function adminCalDetailHtml(dateStr){
     if(!dateStr) return '<h3>Select a day</h3><p class="sub">Click any coloured day above to see that day\'s attendance by class and subject.</p>';
     const day = adminDayStats(state.adminCalClass, dateStr);
-    if(!day) return '<h3>'+dateStr+'</h3><p class="sub">No classes were held on this day.</p>';
+    if(!day) return '<h3>'+dateStr+'</h3>'+holidayNoteHtml(dateStr)+'<p class="sub">No classes were held on this day.</p>';
     const bySubject = {};
     day.recs.forEach(r=>{
       bySubject[r.subjectId] = bySubject[r.subjectId] || {held:0, present:0};
       bySubject[r.subjectId].held++;
       if(r.status==='P') bySubject[r.subjectId].present++;
     });
-    return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' present ('+day.pct+'%)</h3>'
+    return '<h3>'+dateStr+' · '+day.present+' of '+day.held+' present ('+day.pct+'%)</h3>'+holidayNoteHtml(dateStr)
       + '<div class="cal-detail-list">' + Object.keys(bySubject).map(suId=>{
           const su = DB.subjects.find(x=>x.id===suId);
           const st = bySubject[suId];
@@ -2786,7 +2930,7 @@ function renderAdminAnalytics(){
   const o = overallStatsAll(), dates = Array.from(new Set(DB.attendance.map(a=>a.date))).sort().slice(-30);
   const pctOn = d=>{ const r = DB.attendance.filter(a=>a.date===d); return r.length ? Math.round(100*r.filter(a=>a.status==='P').length/r.length) : 0; };
   const heat = {}; DB.attendance.forEach(a=>{ const k = JS_DAY_TO_NAME[new Date(a.date+'T00:00:00').getDay()]+'_'+a.period; const h = heat[k] = heat[k] || [0,0]; h[1]++; if(a.status==='P') h[0]++; });
-  const hm = '<table class="hm-table"><tr><th></th>'+PERIODS.map(p=>'<th>P'+p+'</th>').join('')+'</tr>'+WEEKDAYS.map(w=>'<tr><th>'+w+'</th>'+PERIODS.map(p=>{ const h = heat[w+'_'+p]; if(!h) return '<td class="hm" style="background:#f1eee6;color:#999">–</td>'; const v = Math.round(100*h[0]/h[1]); const bg = v>=85?'#CFE5D8':(v>=75?'#F4E3B5':'#EBC4C0'); const fg = v>=85?CLR.good:(v>=75?'#7a5b06':CLR.bad); return '<td class="hm" style="background:'+bg+';color:'+fg+'">'+v+'%</td>'; }).join('')+'</tr>').join('')+'</table>';
+  const hm = '<table class="hm-table"><tr><th></th>'+PERIODS.map(p=>'<th>P'+p+'</th>').join('')+'</tr>'+WEEKDAYS.map(w=>'<tr><th>'+w+'</th>'+PERIODS.map(p=>{ const h = heat[w+'_'+p]; if(!h) return '<td class="hm" style="background:#E4EDEF;color:#999">–</td>'; const v = Math.round(100*h[0]/h[1]); const bg = v>=85?'#CFE5D8':(v>=75?'#F4E3B5':'#EBC4C0'); const fg = v>=85?CLR.good:(v>=75?'#7a5b06':CLR.bad); return '<td class="hm" style="background:'+bg+';color:'+fg+'">'+v+'%</td>'; }).join('')+'</tr>').join('')+'</table>';
   const ranked = DB.students.map(s=>{ const r = DB.attendance.filter(a=>a.studentId===s.id); return {s, p:r.length?Math.round(100*r.filter(a=>a.status==='P').length/r.length):null, held:r.length}; }).filter(x=>x.p!==null);
   const below = ranked.filter(x=>x.p<75), risk = ranked.slice().sort((a,b)=>a.p-b.p).slice(0,8);
   const today = todayStr(), tRecs = DB.attendance.filter(a=>a.date===today), tPct = tRecs.length?Math.round(100*tRecs.filter(a=>a.status==='P').length/tRecs.length):null;
@@ -2810,74 +2954,15 @@ function renderAdminAnalytics(){
   const pctAx = {min:0,max:100,ticks:{callback:v=>v+'%'},grid:{color:CLR.grid}};
   new Chart($('#ch-donut'), {type:'doughnut', data:{labels:['Present','Absent'], datasets:[{data:[o.present, o.held-o.present], backgroundColor:[CLR.good,CLR.bad], borderWidth:0}]}, options:{maintainAspectRatio:false, cutout:'66%', plugins:{legend:{position:'bottom'}}}});
   const dp = dates.map(pctOn);
-  new Chart($('#ch-line'), {type:'line', data:{labels:dates.map(d=>d.slice(5)), datasets:[{label:'Attendance %', data:dp, borderColor:CLR.brand, backgroundColor:'rgba(122,30,44,.12)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:dp.map(clrFor)}]}, options:{maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}}, scales:{y:pctAx, x:{grid:{display:false}}}}, plugins:[targetLine]});
+  new Chart($('#ch-line'), {type:'line', data:{labels:dates.map(d=>d.slice(5)), datasets:[{label:'Attendance %', data:dp, borderColor:CLR.brand, backgroundColor:'rgba(14,90,107,.12)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:dp.map(clrFor)}]}, options:{maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}}, scales:{y:pctAx, x:{grid:{display:false}}}}, plugins:[targetLine]});
   const subs = DB.subjects.map(su=>({n:su.name, p:subjectOverallStats(su.id).pct})).sort((a,b)=>a.p-b.p);
   new Chart($('#ch-sub'), {type:'bar', data:{labels:subs.map(x=>x.n), datasets:[{data:subs.map(x=>x.p), backgroundColor:subs.map(x=>clrFor(x.p)), borderRadius:4}]}, options:{indexAxis:'y', maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}, tooltip:{callbacks:{label:c=>c.parsed.x+'% attendance'}}}, scales:{x:pctAx, y:{grid:{display:false}}}}, plugins:[targetLine]});
   const cls = DB.classes.map(c=>({n:c.course+' S'+c.semester+'-'+c.section, p:classOverallStats(c.id).pct}));
   new Chart($('#ch-cls'), {type:'bar', data:{labels:cls.map(x=>x.n), datasets:[{data:cls.map(x=>x.p), backgroundColor:cls.map(x=>clrFor(x.p)), borderRadius:4}]}, options:{indexAxis:'y', maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}, tooltip:{callbacks:{label:c=>c.parsed.x+'% attendance'}}}, scales:{x:pctAx, y:{grid:{display:false}}}}, plugins:[targetLine]});
 }
 
-/* ============================= CHECK DETAILS (view-only, not on the dashboard) ============================= */
-const DET = {tab:'students', q:'', classId:'all'};
 const DASH = '<span style="color:var(--muted)">—</span>';
 function clsLabel(c){ return c ? c.course+' S'+c.semester+'-'+c.section : '—'; }
-function statusBadge(st){ return '<span class="badge badge-'+(st==='Active'?'success':'danger')+'">'+escapeHtml(st||'—')+'</span>'; }
-function pctBadge(held,pct){ if(!held) return DASH; const s=statusFor(pct); return '<span class="badge badge-'+s.cls+'">'+pct+'%</span>'; }
-function detailsTable(){
-  const q=DET.q.trim().toLowerCase(), cf=DET.classId, E=escapeHtml;
-  const D=v=>(v===undefined||v===null||v==='')?DASH:E(v);
-  let head=[], rows=[];
-  if(DET.tab==='students'){
-    head=['Reg no.','Name','Class','Date of birth','Gender','Email','Phone','Admission year','Status','Attendance'];
-    DB.students.forEach(s=>{
-      if(cf!=='all' && s.classId!==cf) return;
-      const c=DB.classes.find(x=>x.id===s.classId);
-      let a={held:0,pct:0}; try{ a=overallStatsForStudent(s.id); }catch(e){}
-      rows.push({t:[s.regNo,s.name,s.email,s.phone,clsLabel(c)].join(' '), c:[D(s.regNo),D(s.name),E(clsLabel(c)),D(s.dob),D(s.gender),D(s.email),D(s.phone),D(s.admissionYear),statusBadge(s.status),pctBadge(a.held,a.pct)]});
-    });
-  } else if(DET.tab==='teachers'){
-    head=['Teacher ID','Name','Email','Phone','Subjects','Email reminder','Status'];
-    DB.teachers.forEach(t=>{
-      const subs=DB.subjects.filter(su=>su.teacherId===t.id && (cf==='all'||su.classId===cf));
-      if(cf!=='all' && !subs.length) return;
-      const names=DB.subjects.filter(su=>su.teacherId===t.id).map(su=>su.name).join(', ');
-      const r=Number(t.remindMin)>0 ? t.remindMin+' min before class' : 'Off';
-      rows.push({t:[t.teacherId,t.name,t.email,t.phone,names].join(' '), c:[D(t.teacherId),D(t.name),D(t.email),D(t.phone),D(names),E(r),statusBadge(t.status)]});
-    });
-  } else if(DET.tab==='subjects'){
-    head=['Code','Subject','Class','Semester','Teacher'];
-    DB.subjects.forEach(su=>{
-      if(cf!=='all' && su.classId!==cf) return;
-      const c=DB.classes.find(x=>x.id===su.classId), t=DB.teachers.find(x=>x.id===su.teacherId);
-      rows.push({t:[su.code,su.name,t&&t.name,clsLabel(c)].join(' '), c:[D(su.code),D(su.name),E(clsLabel(c)),D(su.semester),D(t&&t.name)]});
-    });
-  } else {
-    head=['Class','Year','Students','Subjects','Average attendance'];
-    DB.classes.forEach(c=>{
-      const st=classOverallStats(c.id);
-      rows.push({t:clsLabel(c)+' '+(c.year||''), c:[E(clsLabel(c)),D(c.year),DB.students.filter(s=>s.classId===c.id).length,DB.subjects.filter(s=>s.classId===c.id).length,pctBadge(st.held,st.pct)]});
-    });
-  }
-  const shown=rows.filter(r=>!q||r.t.toLowerCase().includes(q));
-  return {count:shown.length, html:'<table class="table"><thead><tr>'+head.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'
-    + (shown.length ? shown.map(r=>'<tr>'+r.c.map(x=>'<td>'+x+'</td>').join('')+'</tr>').join('') : '<tr><td colspan="'+head.length+'" class="empty">Nothing matches.</td></tr>')
-    + '</tbody></table>'};
-}
-function renderAdminDetails(){
-  const tabs=[['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes']];
-  let html='<div class="page-head"><div><h1>Check Details</h1><div class="sub">View-only. Look up records here — nothing on this page can be edited or deleted. Use the Students, Teachers, Subjects and Classes pages to make changes.</div></div></div>';
-  html+='<div class="card"><div class="toggle-group" id="det-tabs" style="margin-bottom:14px;">'
-    + tabs.map(t=>'<button class="toggle-btn '+(DET.tab===t[0]?'active-present':'')+'" data-det="'+t[0]+'">'+t[1]+'</button>').join('')+'</div>'
-    + '<div class="form-row"><div class="field"><label>Search</label><input id="det-q" placeholder="Name, ID, email, phone…" value="'+escapeHtml(DET.q)+'"/></div>'
-    + (DET.tab!=='classes' ? '<div class="field"><label>Class</label><select id="det-class"><option value="all">All classes</option>'+DB.classes.map(c=>'<option value="'+c.id+'" '+(DET.classId===c.id?'selected':'')+'>'+escapeHtml(clsLabel(c))+'</option>').join('')+'</select></div>' : '')
-    + '</div><div class="sub" id="det-count" style="margin-bottom:8px;"></div><div style="overflow-x:auto;" id="det-table"></div></div>';
-  $('#admin-content').innerHTML=html;
-  const upd=()=>{ const t=detailsTable(); $('#det-table').innerHTML=t.html; $('#det-count').textContent=t.count+' record'+(t.count===1?'':'s'); };
-  upd();
-  $all('#det-tabs [data-det]').forEach(b=>b.addEventListener('click',()=>{ DET.tab=b.dataset.det; DET.q=''; renderAdminDetails(); }));
-  $('#det-q').addEventListener('input',e=>{ DET.q=e.target.value; upd(); });
-  const sel=$('#det-class'); if(sel) sel.addEventListener('change',e=>{ DET.classId=e.target.value; upd(); });
-}
 
 /* ============================= EMAIL REMINDERS (automatic + manual) ============================= */
 /* The app queues each email as a document in the Firestore "mail" collection. The Firebase extension
@@ -2903,8 +2988,8 @@ async function queueMail(id, m, once){
   catch(e){ if(once && /HTTP 409/.test(e.message)) return 'duplicate'; throw e; }
 }
 function mailWrap(title, inner){
-  return '<div style="font-family:Arial,sans-serif;max-width:560px;color:#211316;"><h2 style="color:#7A1E2C;margin:0 0 10px;">'+escapeHtml(title)+'</h2>'+inner
-    +'<p style="color:#726B62;font-size:12px;margin-top:22px;">'+escapeHtml(collegeName())+' · automated message</p></div>';
+  return '<div style="font-family:Arial,sans-serif;max-width:560px;color:#0B2530;"><h2 style="color:#0E5A6B;margin:0 0 10px;">'+escapeHtml(title)+'</h2>'+inner
+    +'<p style="color:#5C7077;font-size:12px;margin-top:22px;">'+escapeHtml(collegeName())+' · automated message</p></div>';
 }
 function classLinesFor(teacher, dayName){
   if(WEEKDAYS.indexOf(dayName)===-1) return [];
@@ -2915,7 +3000,7 @@ function classLinesFor(teacher, dayName){
   });
 }
 function scheduleMail(teacher, dayLabel, lines){
-  const rows=lines.map(l=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">Period '+l.period+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+escapeHtml(l.time)+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+escapeHtml(l.subject)+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+escapeHtml(l.cls)+'</td></tr>').join('');
+  const rows=lines.map(l=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">Period '+l.period+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+escapeHtml(l.time)+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+escapeHtml(l.subject)+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+escapeHtml(l.cls)+'</td></tr>').join('');
   return {
     subject:'Your classes — '+dayLabel,
     text:'Hello '+teacher.name+',\n\nYour classes for '+dayLabel+':\n'+lines.map(l=>'Period '+l.period+' ('+l.time+') — '+l.subject+' · '+l.cls).join('\n')+'\n\n'+collegeName(),
@@ -2969,7 +3054,7 @@ function attendanceMail(stu){
   if(!o.held) return null;
   const rows=o.subjects.map(su=>{ const s=subjectStatsForStudent(stu.id,su.id); const p=s.held?Math.round((s.present/s.held)*1000)/10:null; return {n:su.name, held:s.held, present:s.present, pct:p}; }).filter(r=>r.held);
   const low=o.pct<75;
-  const tr=rows.map(r=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+escapeHtml(r.n)+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;">'+r.present+' / '+r.held+'</td><td style="padding:6px 10px;border-bottom:1px solid #DAD4C6;color:'+(r.pct<75?'#A33636':'#2F6F4E')+';">'+r.pct+'%</td></tr>').join('');
+  const tr=rows.map(r=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+escapeHtml(r.n)+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+r.present+' / '+r.held+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;color:'+(r.pct<75?'#A33636':'#2F6F4E')+';">'+r.pct+'%</td></tr>').join('');
   return {
     subject:'Your attendance: '+o.pct+'%'+(low?' — below 75%':''),
     text:'Hello '+stu.name+',\n\nYour overall attendance is '+o.pct+'% ('+o.present+' of '+o.held+' classes).'+(low?' This is below the required 75%.':'')+'\n\n'+rows.map(r=>r.n+': '+r.pct+'%').join('\n')+'\n\n'+collegeName(),
