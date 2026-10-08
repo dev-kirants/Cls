@@ -329,6 +329,11 @@
   .toast{border-left-color:var(--gold);}
   .kpi{border-left-color:var(--primary);}
   .trend-bar{background:linear-gradient(180deg,#17808A,#0E5A6B);}
+  .fp-box{margin-top:16px;}
+  .fp-or{display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.78rem; margin-bottom:12px;}
+  .fp-or::before,.fp-or::after{content:''; flex:1; height:1px; background:var(--line);}
+  #fp-btn svg{flex-shrink:0;}
+  .fp-forget{display:block; margin:10px auto 0; background:none; border:none; color:var(--muted); font-size:.76rem; text-decoration:underline; cursor:pointer;}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -398,6 +403,12 @@
           <div class="field"><label for="admin-pass">Password</label><input id="admin-pass" type="password" autocomplete="current-password"/></div>
           <div id="admin-login-error" class="field-error" style="display:none"></div>
           <button class="btn btn-primary btn-block" data-login="admin">Sign in as admin</button>
+        </div>
+
+        <div id="fp-box" class="fp-box" style="display:none">
+          <div class="fp-or"><span>or</span></div>
+          <button type="button" class="btn btn-ghost btn-block" id="fp-btn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 11v3.5c0 2.2-.6 4.2-1.7 6"/><path d="M8.5 14.5c0 2.6-.5 4.4-1.4 6"/><path d="M15.5 12c0 3.4-.4 6-1.5 8.2"/><path d="M5 12a7 7 0 0 1 14 0v1"/><path d="M8.5 8.6A4.5 4.5 0 0 1 16.5 12"/><path d="M3.5 17.5c.9-1.5 1.5-3.4 1.5-5.5"/></svg> Sign in with fingerprint</button>
+          <button type="button" class="fp-forget" id="fp-forget">Remove fingerprint from this device</button>
         </div>
 
         <p class="hint">Student sign-in uses your register number and date of birth. Teacher and admin credentials are issued by the administrator.</p>
@@ -1331,9 +1342,101 @@ async function login(role){
     $('#admin-user').value=''; $('#admin-pass').value='';
   }
 
+  await fpOffer();
   enterApp();
 }
 
+/* ---------- Fingerprint (device biometric) sign-in ---------- */
+// Uses the phone's own fingerprint sensor (WebAuthn). The fingerprint never leaves the device.
+// true = fingerprint works only in the installed app; false = also in a normal browser tab.
+const FP_APP_ONLY = true;
+const FP_KEY='atl_fp', FP_NO='atl_fp_no';
+function fpList(){ try{ return JSON.parse(localStorage.getItem(FP_KEY)||'[]'); }catch(e){ return []; } }
+function fpSave(l){ try{ localStorage.setItem(FP_KEY, JSON.stringify(l)); }catch(e){} }
+function fpIsApp(){ return !FP_APP_ONLY || (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone===true; }
+async function fpAvailable(){
+  try{ return !!(window.PublicKeyCredential && window.isSecureContext && fpIsApp() && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); }
+  catch(e){ return false; }
+}
+function fpB64(buf){ let b=''; new Uint8Array(buf).forEach(x=>{ b+=String.fromCharCode(x); }); return btoa(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function fpUn(str){ str=str.replace(/-/g,'+').replace(/_/g,'/'); while(str.length%4) str+='='; return Uint8Array.from(atob(str),c=>c.charCodeAt(0)); }
+function fpRole(){ const t=document.querySelector('.role-tab.active'); return (t&&t.dataset.role)||'student'; }
+function fpWho(){
+  if(state.role==='student'){ const x=DB.students.find(v=>v.id===state.studentId); return x&&{role:'student',key:x.id,name:x.name}; }
+  if(state.role==='teacher'){ const x=DB.teachers.find(v=>v.id===state.teacherId); return x&&{role:'teacher',key:x.id,name:x.name}; }
+  if(state.role==='admin') return {role:'admin',key:'admin',name:'Administrator'};
+  return null;
+}
+// After a normal password sign-in, offers to enrol this device's fingerprint (once per person per device).
+async function fpOffer(){
+  try{
+    if(!(await fpAvailable())) return;
+    const w=fpWho(); if(!w) return;
+    const id=w.role+':'+w.key;
+    if(fpList().some(e=>e.id===id)) return;
+    let no=[]; try{ no=JSON.parse(localStorage.getItem(FP_NO)||'[]'); }catch(e){}
+    if(no.includes(id)) return;
+    if(!confirm('Use your fingerprint to sign in next time on this device?')){ no.push(id); try{ localStorage.setItem(FP_NO, JSON.stringify(no)); }catch(e){} return; }
+    const cred = await navigator.credentials.create({publicKey:{
+      challenge:crypto.getRandomValues(new Uint8Array(32)),
+      rp:{name:'Attendance Ledger'},
+      user:{id:new TextEncoder().encode(id), name:w.name, displayName:w.name},
+      pubKeyCredParams:[{type:'public-key',alg:-7}],
+      authenticatorSelection:{authenticatorAttachment:'platform', userVerification:'required', residentKey:'discouraged'},
+      attestation:'none', timeout:60000
+    }});
+    const l=fpList().filter(e=>e.id!==id);
+    l.push({id, role:w.role, key:w.key, name:w.name, cid:fpB64(cred.rawId), pk:(cred.response.getPublicKey?fpB64(cred.response.getPublicKey()):'')});
+    fpSave(l);
+    showToast('Fingerprint enabled','You can now sign in with your fingerprint on this device.');
+  }catch(e){ /* cancelled or not supported: continue with normal sign-in */ }
+}
+function fpDerToRaw(der){
+  der=new Uint8Array(der); let i=2;
+  const rl=der[i+1], r=der.slice(i+2,i+2+rl); i=i+2+rl;
+  const sl=der[i+1], sg=der.slice(i+2,i+2+sl);
+  const fix=x=>{ while(x.length>32&&x[0]===0) x=x.slice(1); const o=new Uint8Array(32); o.set(x,32-x.length); return o; };
+  const out=new Uint8Array(64); out.set(fix(r),0); out.set(fix(sg),32); return out;
+}
+async function fpSignIn(){
+  const role=fpRole();
+  showLoginError(role,'');
+  if(lockLeft()){ showLoginError(role,'Too many attempts. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
+  const list=fpList().filter(e=>e.role===role); if(!list.length) return;
+  try{
+    const challenge=crypto.getRandomValues(new Uint8Array(32));
+    const a=await navigator.credentials.get({publicKey:{challenge, allowCredentials:list.map(e=>({type:'public-key',id:fpUn(e.cid)})), userVerification:'required', timeout:60000}});
+    const e=list.find(x=>x.cid===fpB64(a.rawId)); if(!e) throw new Error('unknown');
+    const r=a.response, ad=new Uint8Array(r.authenticatorData);
+    if(!(ad[32]&0x04)) throw new Error('not verified');
+    const cd=JSON.parse(new TextDecoder().decode(r.clientDataJSON));
+    if(cd.type!=='webauthn.get' || cd.challenge!==fpB64(challenge) || cd.origin!==location.origin) throw new Error('bad data');
+    if(e.pk){
+      const key=await crypto.subtle.importKey('spki',fpUn(e.pk),{name:'ECDSA',namedCurve:'P-256'},false,['verify']);
+      const h=new Uint8Array(await crypto.subtle.digest('SHA-256',r.clientDataJSON));
+      const data=new Uint8Array(ad.length+32); data.set(ad,0); data.set(h,ad.length);
+      if(!(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,fpDerToRaw(r.signature),data))) throw new Error('bad signature');
+    }
+    if(role==='student'){ const s=DB.students.find(x=>x.id===e.key); if(!s) throw new Error('gone'); state.role='student'; state.studentId=s.id; }
+    else if(role==='teacher'){ const t=DB.teachers.find(x=>x.id===e.key); if(!t) throw new Error('gone'); state.role='teacher'; state.teacherId=t.id; state.teacherTab='dashboard'; }
+    else { state.role='admin'; state.adminTab='overview'; migrateTeacherPasswords(); }
+    okLogin(); enterApp();
+  }catch(err){
+    showLoginError(role, err&&err.name==='NotAllowedError' ? 'Fingerprint was cancelled. Try again or use your password.' : 'Fingerprint sign-in failed. Please use your password.');
+  }
+}
+async function fpRefresh(){
+  const box=$('#fp-box'); if(!box) return;
+  const show = fpList().some(e=>e.role===fpRole()) && await fpAvailable();
+  box.style.display = show ? 'block' : 'none';
+}
+document.addEventListener('click', ev=>{
+  const t=ev.target.closest && ev.target.closest('.role-tab,#fp-btn,#fp-forget'); if(!t) return;
+  if(t.classList.contains('role-tab')) setTimeout(fpRefresh,0);
+  else if(t.id==='fp-btn') fpSignIn();
+  else if(t.id==='fp-forget' && confirm('Remove fingerprint sign-in for this role on this device?')){ fpSave(fpList().filter(e=>e.role!==fpRole())); fpRefresh(); }
+});
+fpRefresh();
 function logout(ev){
   if(ev&&ev.type==='click'&&ttDirty()&&!confirm('You have unsaved timetable changes. Sign out and discard them?')) return;
   state.ttDraft={};
@@ -1342,6 +1445,7 @@ function logout(ev){
   $all('.view').forEach(v=>v.classList.remove('active'));
   $('#view-login').classList.add('active');
   clearLoginErrors();
+  fpRefresh();
 }
 
 function updateTopbarWho(){
