@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest"/>
 <link rel="icon" href="icons/icon-192.png"/>
 <link rel="apple-touch-icon" href="icons/icon-192.png"/>
-<title>Attendance Ledger — Student Attendance Management System</title>
+<title>Attendance Management System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -287,8 +287,8 @@
   :root{--radius:12px;}
   .card,.stat-card{box-shadow:0 6px 24px rgba(8,63,76,.08);}
   .login-hero{background:linear-gradient(150deg,#083F4C,#0E5A6B 55%,#D4962A); color:#fff;} .login-hero h1,.login-hero p,.login-hero .eyebrow{color:#fff;}
-  .brand-logo{height:56px; max-width:200px; object-fit:contain; background:#fff; border-radius:10px; padding:4px; margin-right:10px; vertical-align:middle;} .topbar .brand-logo{height:34px;}
-  .brand-name{font-family:var(--font-serif); font-size:1.7rem; margin:10px 0 2px; color:#fff;} .brand-tag{color:#F6DFA8; font-weight:600;} .brand-details{color:#fff; opacity:.9; font-size:.9rem;}
+  .brand-logo{height:60px; max-width:300px; object-fit:contain; background:#f8f5f547; border-radius:10px; padding:4px; margin-right:10px; vertical-align:middle;} .topbar .brand-logo{height:34px;}
+  .brand-name{font-family:var(--font-serif); font-size:1.6rem; margin:10px 0 2px; color:#fff;} .brand-tag{color:#F6DFA8; font-weight:600;} .brand-details{color:#fff; opacity:.9; font-size:.9rem;}
   .day-chips{display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 16px;} .day-chip{border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 18px; font-weight:600; cursor:pointer;} .day-chip.on{background:var(--primary); color:#fff; border-color:var(--primary);}
   .today-grid{grid-template-columns:repeat(auto-fill,minmax(280px,1fr)) !important;} .class-btn{min-height:150px; box-shadow:0 4px 14px rgba(0,0,0,.06);} .class-btn .cb-subject{font-size:1.45rem;}
   .pc-row{display:inline-flex; align-items:center; gap:6px; margin:4px 14px 4px 0;} .hm-table{width:100%; border-collapse:separate; border-spacing:4px; text-align:center;} .hm{border-radius:6px; padding:9px 4px; font-size:.8rem; font-weight:600;}
@@ -355,7 +355,7 @@
 
 
 <header id="topbar" class="topbar">
-  <div class="brand">Attendance Ledger</div>
+  <div class="brand">Attendance Management System</div>
   <div class="who-wrap">
     <span id="topbar-who" class="who"></span>
     <button id="logout-btn" class="btn btn-ghost btn-sm">Sign out</button>
@@ -365,10 +365,8 @@
 <section id="view-login" class="view active">
   <div class="login-wrap">
     <div class="login-hero">
-      <div class="eyebrow">Attendance Ledger</div>
-      <h1>Attendance, made visible with integration of tech.</h1>
-      <p>One system for students, teachers and administrators — role-based dashboards, subject-wise records, and reports you can export in a click.</p>
-     <div class="ledger-mark">
+      <div class="eyebrow">Attendance Management System</div>
+        <div class="ledger-mark">
         <div class="ledger-row"><span class="ledger-dot done"></span><span class="ledger-line"></span></div>
         <div class="ledger-row"><span class="ledger-dot done"></span><span class="ledger-line"></span></div>
         <div class="ledger-row"><span class="ledger-dot"></span><span class="ledger-line short"></span></div>
@@ -411,7 +409,6 @@
           <button type="button" class="fp-forget" id="fp-forget">Remove fingerprint from this device</button>
         </div>
 
-        <p class="hint">Student sign-in uses your register number and date of birth. Teacher and admin credentials are issued by the administrator.</p>
       </div>
     </div>
   </div>
