@@ -70,6 +70,7 @@
   .role-tab{flex:1; padding:10px 4px; text-align:center; cursor:pointer; font-weight:600; font-size:0.9rem; color:var(--muted); background:none; border:none; border-bottom:2px solid transparent;}
   .role-tab.active{color:var(--primary); border-color:var(--primary);}
   .login-panel .field:last-of-type{margin-bottom:18px;}
+  .otp-input{letter-spacing:.45em; text-align:center; font-size:1.25rem; font-weight:600;}
   .hint{font-size:0.78rem; color:var(--muted); margin-top:16px; text-align:center; line-height:1.5;}
   .field-error{font-size:0.8rem; color:var(--danger); background:var(--danger-tint); border:1px solid var(--danger); border-radius:var(--radius); padding:8px 10px; margin:-4px 0 14px;}
 
@@ -274,6 +275,13 @@
   .file-chip.file-rm:hover{background:var(--danger); color:#fff;}
   .btn-danger{background:transparent; border-color:var(--danger); color:var(--danger);}
   .btn-danger:hover{background:var(--danger); color:#fff;}
+  .mr-chip{padding:6px 14px; border:1px solid var(--line); border-radius:999px; background:var(--surface); font-weight:600; font-size:0.78rem; cursor:pointer; color:var(--ink); margin:0 8px 8px 0;}
+  .mr-chip.on{background:var(--success-tint); border-color:var(--success); color:var(--success);}
+  .mr-box{border:1px solid var(--line); border-radius:var(--radius); padding:6px 12px; max-height:290px; overflow:auto;}
+  .mr-row{display:flex; gap:8px; align-items:center; padding:4px 0; font-size:0.82rem; cursor:pointer; flex-wrap:wrap;}
+  .mr-row.dis{color:var(--muted); cursor:default;} .mr-row span{color:var(--muted);}
+  .mr-grp{font-size:0.74rem; font-weight:600; color:var(--muted); margin:8px 0 2px;}
+  .mr-prev{margin-top:12px; padding:10px 12px; background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); font-size:0.8rem; white-space:pre-wrap; font-family:var(--font-sans);}
   .contact-line{font-size:.8rem; line-height:1.5; word-break:break-all;}
   .contact-line .muted{color:var(--muted);}
   .form-msg{font-size:.82rem; margin-top:10px;}
@@ -397,10 +405,21 @@
         </div>
 
         <div id="login-panel-admin" class="login-panel" style="display:none">
-          <div class="field"><label for="admin-user">Admin username</label><input id="admin-user" autocomplete="username"/></div>
-          <div class="field"><label for="admin-pass">Password</label><input id="admin-pass" type="password" autocomplete="current-password"/></div>
+          <div id="admin-cred-box">
+            <div class="field"><label for="admin-user">Admin username</label><input id="admin-user" autocomplete="username"/></div>
+            <div class="field"><label for="admin-pass">Password</label><input id="admin-pass" type="password" autocomplete="current-password"/></div>
+          </div>
+          <div id="admin-otp-box" style="display:none">
+            <p class="sub" style="margin:0 0 12px;">A 6-digit verification code was sent to <b id="admin-otp-to"></b>. It is valid for 5 minutes.</p>
+            <div class="field"><label for="admin-otp">Verification code</label><input id="admin-otp" class="otp-input" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="------"/></div>
+          </div>
           <div id="admin-login-error" class="field-error" style="display:none"></div>
-          <button class="btn btn-primary btn-block" data-login="admin">Sign in as admin</button>
+          <button class="btn btn-primary btn-block" data-login="admin" id="admin-signin-btn">Sign in as admin</button>
+          <div id="admin-otp-actions" class="btn-row" style="display:none;margin-top:10px;">
+            <button type="button" class="btn btn-primary" id="admin-otp-verify">Verify &amp; sign in</button>
+            <button type="button" class="btn btn-ghost" id="admin-otp-resend">Resend code</button>
+            <button type="button" class="btn btn-ghost" id="admin-otp-back">Back</button>
+          </div>
         </div>
 
         <div id="fp-box" class="fp-box" style="display:none">
@@ -441,6 +460,7 @@ const DB = { classes:[], teachers:[], subjects:[], students:[], attendance:[], t
 const SYNC_TABLES = ['classes','teachers','subjects','students','attendance','timetable','holidays','sessions','settings'];
 
 /* ---------- SECURITY ---------- */
+const ADMIN_EMAIL_DEFAULT = '';   // <-- put the single admin e-mail here (login codes go to it). It can later be changed from Admin > Admin Account.
 const ADMIN_CRED = { u:'Admin', h:'e15734e68ef984d24e5ee2985dae9ac401b054429cf3345e6a5a53642fa330a3' };   // PBKDF2 hash only — no plain password in code
 (function(){
   const noop=function(){}; ['log','info','debug','warn'].forEach(k=>{ console[k]=noop; });
@@ -1095,28 +1115,19 @@ function validPhone(p){ return /^\+[1-9]\d{9,14}$/.test(p); }
 function contactCellHtml(t){
   const e = t.email ? '<a href="mailto:'+escapeHtml(t.email)+'">'+escapeHtml(t.email)+'</a>' : '<span class="badge badge-warning">No email</span>';
   const ph = t.phone ? '<a href="tel:'+escapeHtml(t.phone)+'">'+escapeHtml(t.phone)+'</a>' : '<span class="muted">No phone</span>';
-  const r = Number(t.remindMin)>0 ? 'Reminder '+Number(t.remindMin)+' min before class' : 'Reminders off';
-  return '<div class="contact-line">'+e+'<br>'+ph+'<br><span class="muted">'+r+'</span></div>';
+  return '<div class="contact-line">'+e+'<br>'+ph+'</div>';
 }
-function remindSelectHtml(id, cur){
-  const v = (cur===undefined||cur===null||cur==='') ? '15' : String(cur);
-  return '<select id="'+id+'">'+[['0','Off'],['10','10 minutes before'],['15','15 minutes before'],['30','30 minutes before'],['60','1 hour before']]
-    .map(o=>'<option value="'+o[0]+'" '+(v===o[0]?'selected':'')+'>'+o[1]+'</option>').join('')+'</select>';
-}
-/* validates and normalises contact fields; returns {error} or {email, phone, remindMin} */
-function readContact(emailEl, phoneEl, remindEl, selfId, requireEmail){
+/* validates and normalises contact fields; returns {error} or {email, phone} */
+function readContact(emailEl, phoneEl, selfId, requireEmail){
   const email = normEmail(emailEl.value), phone = normPhone(phoneEl.value);
-  if(requireEmail && !email) return {error:'Email is required — class reminders are sent there.'};
+  if(requireEmail && !email) return {error:'Email is required — attendance confirmations are sent there.'};
   if(email && !validEmail(email)) return {error:'Enter a valid email address.'};
   if(phoneEl.value.trim() && !validPhone(phone)) return {error:'Enter a valid phone number (10 digits, or with country code like +91…).'};
   if(email && DB.teachers.some(t=>t.id!==selfId && normEmail(t.email)===email)) return {error:'Another teacher already uses this email.'};
-  const rm = String(remindEl.value);
-  if(!['0','10','15','30','60'].includes(rm)) return {error:'Invalid reminder time.'};
-  return {email, phone: phoneEl.value.trim() ? phone : '', remindMin: rm};
+  return {email, phone: phoneEl.value.trim() ? phone : ''};
 }
 
-/* ---- in-app class reminders (toast + optional browser notification while the page is open) ---- */
-const REMINDED = new Set();
+/* ---- toast (used for short confirmations) ---- */
 function showToast(title, body){
   const host = $('#toast-host'); if(!host) return;
   const d = document.createElement('div'); d.className = 'toast'; d.setAttribute('role','status');
@@ -1125,53 +1136,27 @@ function showToast(title, body){
   const x = document.createElement('button'); x.type = 'button'; x.textContent = 'Dismiss'; x.onclick = ()=>d.remove();
   d.append(b, m, x); host.appendChild(d); setTimeout(()=>d.remove(), 120000);
 }
-function periodStartMin(p){
-  const t = String(PERIOD_TIMES[p]||'').split(/\s*[–-]\s*/)[0], m = /^(\d{1,2}):(\d{2})$/.exec(t.trim());
-  return m ? Number(m[1])*60 + Number(m[2]) : null;
-}
-function checkClassReminders(){
-  if(state.role!=='teacher') return;
-  const teacher = DB.teachers.find(t=>t.id===state.teacherId); if(!teacher) return;
-  const lead = Number(teacher.remindMin===undefined||teacher.remindMin===''?15:teacher.remindMin); if(!(lead>0)) return;
-  if(DB.holidays.some(h=>h.date===todayStr() && h.type==='Holiday')) return;
-  const now = new Date(), nowMin = now.getHours()*60 + now.getMinutes();
-  teacherTodayClasses(teacher).forEach(tt=>{
-    const st = periodStartMin(tt.period); if(st===null) return;
-    const diff = st - nowMin, key = todayStr()+'|'+tt.subjectId+'|'+tt.period;
-    if(diff>0 && diff<=lead && !REMINDED.has(key)){
-      REMINDED.add(key);
-      const su = DB.subjects.find(x=>x.id===tt.subjectId), cls = DB.classes.find(x=>x.id===tt.classId);
-      const title = 'Class in '+diff+' min', body = (su?su.name:'Class')+(cls?' · '+cls.course+' S'+cls.semester+'-'+cls.section:'')+' · Period '+tt.period+' ('+PERIOD_TIMES[tt.period]+')';
-      showToast(title, body);
-      try{ if('Notification' in window && Notification.permission==='granted') new Notification(title, {body}); }catch(e){}
-    }
-  });
-}
-setInterval(checkClassReminders, 30000);
 
 function teacherProfileCardHtml(t){
-  return '<div class="card" id="profile-card"><h3>My contact &amp; reminders</h3>'
-    + '<p class="sub" style="margin-bottom:12px;">Class reminders are emailed to you. Changing these details needs your password.</p>'
+  return '<div class="card" id="profile-card"><h3>My contact</h3>'
+    + '<p class="sub" style="margin-bottom:12px;">Attendance confirmations are emailed to you here. Changing these details needs your password.</p>'
     + '<div class="form-grid">'
     + '<div class="field"><label>Email</label><input id="p-email" type="email" maxlength="254" autocomplete="email" value="'+escapeHtml(t.email||'')+'"/></div>'
     + '<div class="field"><label>Phone number</label><input id="p-phone" type="tel" maxlength="20" autocomplete="tel" placeholder="+91 98765 43210" value="'+escapeHtml(t.phone||'')+'"/></div>'
-    + '<div class="field"><label>Remind me</label>'+remindSelectHtml('p-remind', t.remindMin)+'</div>'
     + '<div class="field"><label>Current password</label><input id="p-pass" type="password" autocomplete="current-password"/></div>'
     + '</div><div class="btn-row"><button class="btn btn-primary" id="p-save">Save contact details</button>'
-    + (('Notification' in window && Notification.permission==='default') ? '<button class="btn btn-ghost" id="p-notify">Enable browser alerts</button>' : '')
     + '</div><div class="form-msg" id="p-msg" role="alert"></div></div>';
 }
 function bindTeacherProfile(t){
   const msg = (txt, ok)=>{ const m=$('#p-msg'); m.textContent = txt; m.className = 'form-msg '+(ok?'ok':'err'); };
-  const nb = $('#p-notify'); if(nb) nb.addEventListener('click', ()=>{ Notification.requestPermission().then(()=>renderTeacherProfile(t)); });
   $('#p-save').addEventListener('click', async ()=>{
     if(lockLeft()>0){ msg('Too many wrong passwords. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
-    const c = readContact($('#p-email'), $('#p-phone'), $('#p-remind'), t.id, true);
+    const c = readContact($('#p-email'), $('#p-phone'), t.id, true);
     if(c.error){ msg(c.error); return; }
     const pw = $('#p-pass').value;
     if(!pw || !t.passHash || (await hashPw(pw, t.id)) !== t.passHash){ failLogin(); msg('Password is incorrect.'); $('#p-pass').value=''; return; }
     okLogin();
-    t.email = c.email; t.phone = c.phone; t.remindMin = c.remindMin;
+    t.email = c.email; t.phone = c.phone;
     syncUpsert('teachers', t);
     $('#p-pass').value=''; msg('Saved.', true);
   });
@@ -1294,6 +1279,10 @@ function bindLoginEvents(){
     clearLoginErrors();
   }));
   $all('[data-login]').forEach(btn=>btn.addEventListener('click', ()=>login(btn.dataset.login)));
+  $('#admin-otp-verify').addEventListener('click', verifyAdminOtp);
+  $('#admin-otp-resend').addEventListener('click', resendAdminOtp);
+  $('#admin-otp-back').addEventListener('click', ()=>{ resetAdminLoginUi(true); showLoginError('admin',''); });
+  $('#admin-otp').addEventListener('keydown', e=>{ if(e.key==='Enter') verifyAdminOtp(); });
   $('#logout-btn').addEventListener('click', logout);
 }
 
@@ -1331,16 +1320,91 @@ async function login(role){
   else if(role==='admin'){
     const user = $('#admin-user').value.trim();
     const pass = $('#admin-pass').value;
+    const A = adminAccount();
     const h=await hashPw(pass,'admin');
-    if(user !== ADMIN_CRED.u || h !== ADMIN_CRED.h){ failLogin(); showLoginError('admin', 'Username or password is incorrect.'); return; }
-    okLogin(); migrateTeacherPasswords();
-    state.role = 'admin';
-    state.adminTab = 'overview';
-    $('#admin-user').value=''; $('#admin-pass').value='';
+    if(user !== A.user || h !== A.h){ failLogin(); showLoginError('admin', 'Username or password is incorrect.'); return; }
+    if(A.email && BACKEND_ON()){
+      const b=$('#admin-signin-btn'); b.disabled=true; b.textContent='Sending code…';
+      try{ await otpIssue('login', A.email, 'login'); }
+      catch(e){ showLoginError('admin','Could not send the verification code ('+e.message+'). Check the database rules and e-mail delivery setup.'); return; }
+      finally{ b.disabled=false; b.textContent='Sign in as admin'; }
+      showAdminOtp(A.email);
+      return;
+    }
+    // No admin e-mail configured yet (first run) or no database: password-only, and the admin is sent to set the e-mail.
+    await finishAdminLogin(!A.email);
+    return;
   }
 
   await fpOffer();
   enterApp();
+}
+
+/* ---------- Admin account + e-mail one-time codes (OTP) ---------- */
+function adminAccount(){
+  const s = getSetting('adminAcct', {}) || {};
+  return {user:s.user||ADMIN_CRED.u, h:s.h||ADMIN_CRED.h, email:normEmail(s.email||ADMIN_EMAIL_DEFAULT)};
+}
+function maskEmail(e){ const [u,d]=String(e).split('@'); return (u||'').slice(0,1)+'***@'+(d||''); }
+const OTPS = {};     // key -> {id,h,exp,tries,sentAt}; only a hash of the code is kept in memory
+async function otpDrop(key){
+  const r=OTPS[key]; if(!r) return; delete OTPS[key];
+  try{ const c=getSupabaseCfg(); await fsPost(c,':commit',{writes:[{delete:fsRoot(c)+'/mail/'+r.id}]}); }catch(e){}
+}
+async function otpIssue(key, to, purpose){
+  const prev=OTPS[key]; if(prev && Date.now()-prev.sentAt<30000) throw new Error('wait 30 seconds before asking for another code');
+  await otpDrop(key);
+  const code=String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
+  const id=uid('otp_');
+  const what = purpose==='login' ? 'sign in to the admin portal' : 'confirm a change to the admin details';
+  const m={subject:'Your verification code',
+    text:'Your verification code to '+what+' is '+code+'.\n\nIt is valid for 5 minutes. If this was not you, ignore this e-mail and change the admin password.\n\n'+collegeName(),
+    html:mailWrap('Verification code','<p>Use this code to '+escapeHtml(what)+':</p><p style="font-size:28px;letter-spacing:6px;font-weight:700;margin:12px 0;">'+code+'</p><p>It is valid for 5 minutes. If this was not you, ignore this e-mail and change the admin password.</p>')};
+  await queueMail(id,{to:normEmail(to),subject:m.subject,text:m.text,html:m.html,kind:'otp',by:'system'},false);
+  OTPS[key]={id, h:await hashPw(code,'otp'+id), exp:Date.now()+300000, tries:0, sentAt:Date.now()};
+}
+async function otpCheck(key, code){
+  const r=OTPS[key]; if(!r) return {s:'expired'};
+  if(Date.now()>r.exp){ otpDrop(key); return {s:'expired'}; }
+  r.tries++;
+  if((await hashPw(String(code||'').trim(),'otp'+r.id))===r.h){ await otpDrop(key); return {s:'ok'}; }
+  if(r.tries>=5){ otpDrop(key); return {s:'locked'}; }
+  return {s:'bad', left:5-r.tries};
+}
+function showAdminOtp(email){
+  $('#admin-cred-box').style.display='none'; $('#admin-signin-btn').style.display='none';
+  $('#admin-otp-box').style.display='block'; $('#admin-otp-actions').style.display='flex';
+  $('#admin-otp-to').textContent=maskEmail(email); $('#admin-otp').value=''; $('#admin-otp').focus();
+}
+function resetAdminLoginUi(clearPass){
+  otpDrop('login');
+  const q=id=>document.getElementById(id); if(!q('admin-cred-box')) return;
+  q('admin-cred-box').style.display='block'; q('admin-signin-btn').style.display='';
+  q('admin-otp-box').style.display='none'; q('admin-otp-actions').style.display='none';
+  q('admin-otp').value=''; if(clearPass) q('admin-pass').value='';
+}
+async function finishAdminLogin(needEmail){
+  okLogin(); migrateTeacherPasswords();
+  state.role='admin'; state.adminTab = needEmail ? 'account' : 'overview';
+  $('#admin-user').value=''; $('#admin-pass').value='';
+  resetAdminLoginUi(true);
+  enterApp();
+}
+async function verifyAdminOtp(){
+  showLoginError('admin','');
+  if(lockLeft()){ showLoginError('admin','Too many attempts. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
+  const r=await otpCheck('login', $('#admin-otp').value);
+  if(r.s==='ok'){ await finishAdminLogin(false); return; }
+  failLogin();
+  if(r.s==='expired'){ resetAdminLoginUi(true); showLoginError('admin','That code has expired. Sign in again to get a new one.'); }
+  else if(r.s==='locked'){ resetAdminLoginUi(true); showLoginError('admin','Too many wrong codes. Sign in again to get a new one.'); }
+  else { showLoginError('admin','Incorrect code. '+r.left+' attempt'+(r.left===1?'':'s')+' left.'); $('#admin-otp').value=''; }
+}
+async function resendAdminOtp(){
+  const A=adminAccount(), b=$('#admin-otp-resend'); b.disabled=true;
+  try{ await otpIssue('login', A.email, 'login'); showLoginError('admin',''); showToast('Code sent','A new code was sent to '+maskEmail(A.email)+'.'); }
+  catch(e){ showLoginError('admin','Could not resend ('+e.message+').'); }
+  finally{ setTimeout(()=>{ b.disabled=false; },30000); }
 }
 
 /* ---------- Fingerprint (device biometric) sign-in ---------- */
@@ -1368,7 +1432,7 @@ function fpWho(){
 async function fpOffer(){
   try{
     if(!(await fpAvailable())) return;
-    const w=fpWho(); if(!w) return;
+    const w=fpWho(); if(!w || w.role==='admin') return;
     const id=w.role+':'+w.key;
     if(fpList().some(e=>e.id===id)) return;
     let no=[]; try{ no=JSON.parse(localStorage.getItem(FP_NO)||'[]'); }catch(e){}
@@ -1398,6 +1462,7 @@ function fpDerToRaw(der){
 async function fpSignIn(){
   const role=fpRole();
   showLoginError(role,'');
+  if(role==='admin'){ showLoginError(role,'Admin sign-in needs your password and an e-mail code.'); return; }
   if(lockLeft()){ showLoginError(role,'Too many attempts. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
   const list=fpList().filter(e=>e.role===role); if(!list.length) return;
   try{
@@ -1424,7 +1489,7 @@ async function fpSignIn(){
 }
 async function fpRefresh(){
   const box=$('#fp-box'); if(!box) return;
-  const show = fpList().some(e=>e.role===fpRole()) && await fpAvailable();
+  const show = fpRole()!=='admin' && fpList().some(e=>e.role===fpRole()) && await fpAvailable();
   box.style.display = show ? 'block' : 'none';
 }
 document.addEventListener('click', ev=>{
@@ -1438,6 +1503,7 @@ function logout(ev){
   if(ev&&ev.type==='click'&&ttDirty()&&!confirm('You have unsaved timetable changes. Sign out and discard them?')) return;
   state.ttDraft={};
   state.role = null;
+  try{ resetAdminLoginUi(true); }catch(e){}
   $('#topbar').style.display='none';
   $all('.view').forEach(v=>v.classList.remove('active'));
   $('#view-login').classList.add('active');
@@ -1754,7 +1820,6 @@ function renderTeacherDashboard(teacher){
     + '</tbody></table></div>';
 
   $('#teacher-content').innerHTML = html;
-  checkClassReminders();
   $all('[data-open-subject]').forEach(btn=>btn.addEventListener('click', ()=>{
     openClassFromButton(btn.dataset.openSubject, Number(btn.dataset.openPeriod), btn.dataset.openDate);
   }));
@@ -1762,7 +1827,7 @@ function renderTeacherDashboard(teacher){
 }
 
 function renderTeacherProfile(teacher){
-  const html = '<div class="page-head"><div><h1>My Contact</h1><div class="sub">Update your email, phone number and class-reminder time. Your name, ID and subjects are managed by the administrator.</div></div></div>'
+  const html = '<div class="page-head"><div><h1>My Contact</h1><div class="sub">Update your email and phone number. Your name, ID and subjects are managed by the administrator.</div></div></div>'
     + teacherProfileCardHtml(teacher);
   $('#teacher-content').innerHTML = html;
   bindTeacherProfile(teacher);
@@ -1905,11 +1970,11 @@ function renderTeacherMark(teacher){
     $('#save-attendance-btn').addEventListener('click', async ()=>{
       const date = state.markDate || todayStr();
       const period = state.markPeriod || 1;
-      const touched = [];
+      const touched = []; let newCount = 0;
       Object.entries(state.markDraft).forEach(([studentId, status])=>{
         const existing = DB.attendance.find(a=>a.studentId===studentId && a.subjectId===state.markSubject && a.date===date && a.period===period);
         if(existing){ if(existing.status !== status){ existing.status = status; touched.push(existing); } }
-        else{ const rec = {id:uid('A'), studentId, subjectId:state.markSubject, teacherId:teacher.id, date, period, status}; DB.attendance.push(rec); touched.push(rec); }
+        else{ const rec = {id:uid('A'), studentId, subjectId:state.markSubject, teacherId:teacher.id, date, period, status}; DB.attendance.push(rec); touched.push(rec); newCount++; }
       });
       const n = touched.length;
       if(!n){ $('#save-confirm').textContent = 'No changes to save.'; return; }
@@ -1918,7 +1983,11 @@ function renderTeacherMark(teacher){
       const ok = await syncBulkUpsert('attendance', touched);
       const m2 = $('#save-confirm'), b2 = $('#save-attendance-btn');
       if(b2) b2.disabled = false;
-      if(m2) m2.textContent = ok===false ? 'NOT saved to the database - see the red message and press Save again.' : 'Saved '+n+' records for '+date+'. Students and faculty see it within a few seconds.';
+      if(ok===false){ if(m2) m2.textContent = 'NOT saved to the database - see the red message and press Save again.'; return; }
+      if(m2) m2.textContent = 'Saved '+n+' records for '+date+'. Sending confirmation email…';
+      const mr = await mailAttendanceMarked(teacher, subject, date, period, newCount===0);
+      const m3 = $('#save-confirm');
+      if(m3) m3.textContent = 'Saved '+n+' records for '+date+'. ' + (mr.status==='queued' ? 'Confirmation emailed to '+mr.to+'.' : mr.status==='noemail' ? 'No email address on file for the teacher, so no confirmation was sent.' : 'Confirmation email could not be queued - check the database rules.');
     });
   }
 
@@ -2123,7 +2192,7 @@ function renderTeacherReports(teacher){
 
 /* ============================= ADMIN DASHBOARD ============================= */
 function renderAdminSidebar(){
-  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['timetable','Timetable'],['holidays','Holidays'],['attendance','Attendance'],['calendar','Calendar'],['analytics','Analytics'],['content','Class Content'],['@Notifications'],['reminders','Email Reminders'],['@System'],['settings','Settings']];
+  const tabs = [['overview','Overview'],['students','Students'],['teachers','Teachers'],['subjects','Subjects'],['classes','Classes'],['timetable','Timetable'],['holidays','Holidays'],['attendance','Attendance'],['calendar','Calendar'],['analytics','Analytics'],['content','Class Content'],['mailreminder','Mail Reminder'],['@System'],['account','Admin Account'],['settings','Settings']];
   $('#admin-sidebar').innerHTML = '<div class="side-title">Administrator</div><div class="side-sub">Full access</div>'
     + tabs.map(t=>t[0].charAt(0)==='@' ? '<div class="side-group">'+t[0].slice(1)+'</div>' : '<button class="sidebar-link '+(state.adminTab===t[0]?'active':'')+'" data-tab="'+t[0]+'">'+t[1]+'</button>').join('');
   $all('#admin-sidebar .sidebar-link').forEach(btn=>btn.addEventListener('click', ()=>{
@@ -2141,7 +2210,7 @@ function renderAdminContent(){
     subjects:renderAdminSubjects, classes:renderAdminClasses, attendance:renderAdminAttendance,
     calendar:renderAdminCalendar, analytics:renderAdminAnalytics,
     timetable:renderAdminTimetable, holidays:renderAdminHolidays, settings:renderAdminSettings,
-    content:renderAdminContentTab, reminders:renderAdminReminders
+    content:renderAdminContentTab, mailreminder:renderAdminMailReminder, account:renderAdminAccount
   };
   (map[state.adminTab] || renderAdminOverview)();
 }
@@ -2317,7 +2386,7 @@ function renderAdminHolidays(){
    students, attendance; timetable/holidays/sessions optional) and loads it into the app. */
 const IMPORT_SCHEMA = {
   classes:['id','course','semester','section','year'],
-  teachers:['id','teacherId','name','password','passHash','status','email','phone','remindMin'],
+  teachers:['id','teacherId','name','password','passHash','status','email','phone'],
   subjects:['id','code','name','semester','teacherId','classId'],
   students:['id','regNo','name','dob','gender','course','dept','semester','section','email','phone','admissionYear','status','classId'],
   attendance:['id','studentId','subjectId','teacherId','date','period','status'],
@@ -2665,16 +2734,15 @@ function handleImportStudents(e){
 /* --- Teachers --- */
 function teacherFormHtml(){
   const editing = state.teacherForm;
-  const t = editing || {teacherId:'', name:'', password:'', status:'Active', email:'', phone:'', remindMin:'15'};
+  const t = editing || {teacherId:'', name:'', password:'', status:'Active', email:'', phone:''};
   const assignedIds = DB.subjects.filter(su=>su.teacherId === (editing?editing.id:null)).map(su=>su.id);
   return '<h3>'+(editing?'Edit teacher':'Add teacher')+'</h3>'
     + '<div class="form-grid">'
     + '<div class="field"><label>Teacher ID</label><input id="f-teacherId" maxlength="40" value="'+escapeHtml(t.teacherId)+'"/></div>'
     + '<div class="field"><label>Name</label><input id="f-tname" maxlength="80" value="'+escapeHtml(t.name)+'"/></div>'
     + '<div class="field"><label>Password</label><input id="f-tpass" type="password" autocomplete="new-password" minlength="8" value="" placeholder="'+(editing?'Leave blank to keep current':'Set a password')+'"/></div>'
-    + '<div class="field"><label>Email (for class reminders)</label><input id="f-temail" type="email" maxlength="254" autocomplete="off" value="'+escapeHtml(t.email||'')+'"/></div>'
+    + '<div class="field"><label>Email (attendance confirmations are sent here)</label><input id="f-temail" type="email" maxlength="254" autocomplete="off" value="'+escapeHtml(t.email||'')+'"/></div>'
     + '<div class="field"><label>Phone number</label><input id="f-tphone" type="tel" maxlength="20" autocomplete="off" placeholder="+91 98765 43210" value="'+escapeHtml(t.phone||'')+'"/></div>'
-    + '<div class="field"><label>Email reminder</label>'+remindSelectHtml('f-tremind', t.remindMin)+'</div>'
     + '<div class="field"><label>Status</label><select id="f-tstatus">' + ['Active','Inactive'].map(g=>'<option '+(g===t.status?'selected':'')+'>'+g+'</option>').join('') + '</select></div>'
     + '</div>'
     + '<div class="field"><label>Assigned subjects</label><select id="f-tsubjects" multiple size="4">'
@@ -2728,9 +2796,9 @@ function bindTeacherFormEvents(){
     if(DB.teachers.some(t=>(!state.teacherForm||t.id!==state.teacherForm.id) && (t.teacherId||'').toLowerCase()===data.teacherId.toLowerCase())){ alert('That Teacher ID is already in use.'); return; }
     const rid = state.teacherForm ? state.teacherForm.id : uid('TC');
     const hadEmail = state.teacherForm && state.teacherForm.email;
-    const c = readContact($('#f-temail'), $('#f-tphone'), $('#f-tremind'), rid, !state.teacherForm || !!hadEmail);
+    const c = readContact($('#f-temail'), $('#f-tphone'), rid, !state.teacherForm || !!hadEmail);
     if(c.error){ alert(c.error); return; }
-    data.email = c.email; data.phone = c.phone; data.remindMin = c.remindMin;
+    data.email = c.email; data.phone = c.phone;
     if(pw){ data.passHash = await hashPw(pw, rid); data.password = ''; }
     let teacherId, savedTeacher;
     if(state.teacherForm){ Object.assign(state.teacherForm, data); teacherId = state.teacherForm.id; savedTeacher = state.teacherForm; }
@@ -3065,12 +3133,9 @@ function renderAdminAnalytics(){
 const DASH = '<span style="color:var(--muted)">—</span>';
 function clsLabel(c){ return c ? c.course+' S'+c.semester+'-'+c.section : '—'; }
 
-/* ============================= EMAIL REMINDERS (automatic + manual) ============================= */
+/* ============================= E-MAIL (attendance confirmations + admin login codes) ============================= */
 /* The app queues each email as a document in the Firestore "mail" collection. The Firebase extension
-   "Trigger Email from Firestore" (see the setup card on the page) actually delivers it by SMTP. */
-const AUTO = {sent:0, lastErr:'', lastAt:0};
-const MAILED = new Set();
-function autoOn(){ return getSetting('autoRemind',{on:true}).on!==false; }
+   "Trigger Email from Firestore" (see the setup card on Admin > Admin Account) actually delivers it by SMTP. */
 function collegeName(){ return (getSetting('brand',{}).name||'').trim() || 'Attendance Ledger'; }
 function mailFields(m){
   const S=v=>({stringValue:String(v)});
@@ -3080,7 +3145,6 @@ function mailFields(m){
     kind:S(m.kind), by:S(m.by), teacherId:S(m.teacherId||''), createdAt:{integerValue:String(Date.now())}
   };
 }
-/* once=true: create only if that document does not exist yet, so the same reminder is never sent twice. */
 async function queueMail(id, m, once){
   const c=getSupabaseCfg();
   const w={update:{name:fsRoot(c)+'/mail/'+id, fields:mailFields(m)}};
@@ -3092,112 +3156,47 @@ function mailWrap(title, inner){
   return '<div style="font-family:Arial,sans-serif;max-width:560px;color:#0B2530;"><h2 style="color:#0E5A6B;margin:0 0 10px;">'+escapeHtml(title)+'</h2>'+inner
     +'<p style="color:#5C7077;font-size:12px;margin-top:22px;">'+escapeHtml(collegeName())+' · automated message</p></div>';
 }
-function classLinesFor(teacher, dayName){
-  if(WEEKDAYS.indexOf(dayName)===-1) return [];
-  const ids=new Set(DB.subjects.filter(su=>su.teacherId===teacher.id).map(s=>s.id));
-  return DB.timetable.filter(tt=>tt.day===dayName && ids.has(tt.subjectId)).sort((a,b)=>a.period-b.period).map(tt=>{
-    const su=DB.subjects.find(x=>x.id===tt.subjectId), cl=DB.classes.find(x=>x.id===tt.classId);
-    return {period:tt.period, time:PERIOD_TIMES[tt.period]||'', subject:su?su.name:'Class', cls:clsLabel(cl)};
-  });
-}
-function scheduleMail(teacher, dayLabel, lines){
-  const rows=lines.map(l=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">Period '+l.period+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+escapeHtml(l.time)+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+escapeHtml(l.subject)+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+escapeHtml(l.cls)+'</td></tr>').join('');
-  return {
-    subject:'Your classes — '+dayLabel,
-    text:'Hello '+teacher.name+',\n\nYour classes for '+dayLabel+':\n'+lines.map(l=>'Period '+l.period+' ('+l.time+') — '+l.subject+' · '+l.cls).join('\n')+'\n\n'+collegeName(),
-    html:mailWrap('Your classes — '+dayLabel,'<p>Hello '+escapeHtml(teacher.name)+',</p><table style="border-collapse:collapse;font-size:14px;">'+rows+'</table>')
-  };
-}
-function classMail(teacher, tt, diff){
-  const su=DB.subjects.find(x=>x.id===tt.subjectId), cl=DB.classes.find(x=>x.id===tt.classId);
-  const subj=su?su.name:'Class', where=clsLabel(cl), time=PERIOD_TIMES[tt.period]||'';
-  return {
-    subject:'Class reminder: '+subj+' in '+diff+' min',
-    text:'Hello '+teacher.name+',\n\n'+subj+' ('+where+') starts in about '+diff+' minutes — Period '+tt.period+', '+time+'.\n\n'+collegeName(),
-    html:mailWrap('Class in '+diff+' minutes','<p>Hello '+escapeHtml(teacher.name)+',</p><p><b>'+escapeHtml(subj)+'</b> · '+escapeHtml(where)+'<br>Period '+tt.period+' · '+escapeHtml(time)+'</p>')
-  };
-}
-function mailId(s){ return String(s).replace(/[^A-Za-z0-9_-]/g,'_'); }
-/* Automatic: runs every 30 s while an admin or teacher has the app open. */
-async function autoEmailReminders(){
-  if(!(state.role==='admin'||state.role==='teacher') || !BACKEND_ON() || !autoOn()) return;
-  if(WEEKDAYS.indexOf(todayDayName())===-1) return;
-  if(DB.holidays.some(h=>h.date===todayStr() && h.type==='Holiday')) return;
-  const now=new Date(), nowMin=now.getHours()*60+now.getMinutes();
-  for(const t of DB.teachers){
-    const email=normEmail(t.email), lead=Number(t.remindMin===undefined||t.remindMin===''?15:t.remindMin);
-    if(t.status==='Inactive' || !email || !validEmail(email) || !(lead>0)) continue;
-    for(const tt of teacherTodayClasses(t)){
-      const st=periodStartMin(tt.period); if(st===null) continue;
-      const diff=st-nowMin, key='rem_'+mailId(todayStr()+'_'+t.id+'_'+tt.subjectId+'_'+tt.period);
-      if(diff<=0 || diff>lead || MAILED.has(key)) continue;
-      MAILED.add(key);
-      try{
-        const m=classMail(t,tt,diff);
-        const r=await queueMail(key,{to:email,subject:m.subject,text:m.text,html:m.html,kind:'class-reminder',by:'auto',teacherId:t.id},true);
-        if(r==='queued'){ AUTO.sent++; AUTO.lastAt=Date.now(); AUTO.lastErr=''; }
-      }catch(e){ AUTO.lastErr=e.message; }
-    }
-  }
-}
-setInterval(autoEmailReminders, 30000);
-setTimeout(autoEmailReminders, 4000);
 
-function classLinesForClass(classId, dayName){
-  if(WEEKDAYS.indexOf(dayName)===-1) return [];
-  return DB.timetable.filter(tt=>tt.day===dayName && tt.classId===classId).sort((a,b)=>a.period-b.period).map(tt=>{
-    const su=DB.subjects.find(x=>x.id===tt.subjectId), cl=DB.classes.find(x=>x.id===tt.classId);
-    return {period:tt.period, time:PERIOD_TIMES[tt.period]||'', subject:su?su.name:'Class', cls:clsLabel(cl)};
-  });
+/* Sent to the subject's teacher as soon as attendance is saved. */
+function attendanceMarkedMail(owner, marker, subject, cls, date, period, recs, isUpdate){
+  const present=recs.filter(r=>r.status==='P').length, total=recs.length, absent=total-present;
+  const pct=total?Math.round((present/total)*1000)/10:0;
+  const abs=recs.filter(r=>r.status==='A').map(r=>DB.students.find(s=>s.id===r.studentId)).filter(Boolean).sort((a,b)=>String(a.regNo).localeCompare(String(b.regNo)));
+  const shown=abs.slice(0,100), more=abs.length-shown.length;
+  const where=clsLabel(cls), time=PERIOD_TIMES[period]||'';
+  const verb=isUpdate?'updated':'marked';
+  const subjectLine='Attendance '+verb+': '+subject.name+' · '+where+' · '+date+' (Period '+period+')';
+  const td='padding:6px 10px;border-bottom:1px solid #CCDADD;';
+  const absRows=shown.map(s=>'<tr><td style="'+td+'">'+escapeHtml(s.regNo)+'</td><td style="'+td+'">'+escapeHtml(s.name)+'</td></tr>').join('');
+  const text='Hello '+owner.name+',\n\nAttendance was '+verb+' for '+subject.name+' ('+where+') on '+date+', Period '+period+(time?' ('+time+')':'')+'.\n'
+    +'Marked by: '+marker.name+'\nPresent: '+present+'  Absent: '+absent+'  Total: '+total+'  ('+pct+'% present)\n'
+    +(abs.length?'\nAbsent students:\n'+shown.map(s=>s.regNo+' - '+s.name).join('\n')+(more>0?'\n...and '+more+' more':'')+'\n':'\nNo absentees.\n')
+    +'\n'+collegeName();
+  const html=mailWrap('Attendance '+verb,
+    '<p>Hello '+escapeHtml(owner.name)+',</p>'
+    +'<p><b>'+escapeHtml(subject.name)+'</b> · '+escapeHtml(where)+'<br>'+escapeHtml(date)+' · Period '+period+(time?' ('+escapeHtml(time)+')':'')+'<br>Marked by '+escapeHtml(marker.name)+'</p>'
+    +'<p style="font-size:15px;"><b style="color:#2F6F4E;">Present '+present+'</b> &nbsp; <b style="color:#A33636;">Absent '+absent+'</b> &nbsp; Total '+total+' &nbsp; ('+pct+'% present)</p>'
+    +(abs.length?'<table style="border-collapse:collapse;font-size:14px;"><tr><th align="left" style="padding:6px 10px;">Reg. no.</th><th align="left" style="padding:6px 10px;">Absent student</th></tr>'+absRows+'</table>'+(more>0?'<p>…and '+more+' more.</p>':''):'<p>No absentees.</p>'));
+  return {subject:subjectLine, text, html};
 }
-function attendanceMail(stu){
-  const o=overallStatsForStudent(stu.id);
-  if(!o.held) return null;
-  const rows=o.subjects.map(su=>{ const s=subjectStatsForStudent(stu.id,su.id); const p=s.held?Math.round((s.present/s.held)*1000)/10:null; return {n:su.name, held:s.held, present:s.present, pct:p}; }).filter(r=>r.held);
-  const low=o.pct<75;
-  const tr=rows.map(r=>'<tr><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+escapeHtml(r.n)+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;">'+r.present+' / '+r.held+'</td><td style="padding:6px 10px;border-bottom:1px solid #CCDADD;color:'+(r.pct<75?'#A33636':'#2F6F4E')+';">'+r.pct+'%</td></tr>').join('');
-  return {
-    subject:'Your attendance: '+o.pct+'%'+(low?' — below 75%':''),
-    text:'Hello '+stu.name+',\n\nYour overall attendance is '+o.pct+'% ('+o.present+' of '+o.held+' classes).'+(low?' This is below the required 75%.':'')+'\n\n'+rows.map(r=>r.n+': '+r.pct+'%').join('\n')+'\n\n'+collegeName(),
-    html:mailWrap('Your attendance: '+o.pct+'%','<p>Hello '+escapeHtml(stu.name)+',</p><p>You attended '+o.present+' of '+o.held+' classes.'+(low?' <b style="color:#A33636;">This is below the required 75%.</b>':'')+'</p><table style="border-collapse:collapse;font-size:14px;"><tr><th align="left" style="padding:6px 10px;">Subject</th><th align="left" style="padding:6px 10px;">Present</th><th align="left" style="padding:6px 10px;">%</th></tr>'+tr+'</table>')
-  };
+/* returns {status:'queued'|'noemail'|'failed', to} */
+async function mailAttendanceMarked(marker, subject, date, period, isUpdate){
+  const owner=DB.teachers.find(t=>t.id===subject.teacherId) || marker;
+  const to=normEmail(owner.email);
+  if(!validEmail(to)) return {status:'noemail', to:''};
+  if(!BACKEND_ON()) return {status:'failed', to};
+  const cls=DB.classes.find(c=>c.id===subject.classId);
+  const recs=DB.attendance.filter(a=>a.subjectId===subject.id && a.date===date && a.period===period);
+  if(!recs.length) return {status:'failed', to};
+  try{
+    const m=attendanceMarkedMail(owner, marker, subject, cls, date, period, recs, isUpdate);
+    await queueMail(uid('att_'),{to,subject:m.subject,text:m.text,html:m.html,kind:'attendance',by:'attendance',teacherId:owner.id},false);
+    return {status:'queued', to};
+  }catch(e){ return {status:'failed', to}; }
 }
-const MAIL_UI = {aud:'teachers', type:'today', pT:null, pS:null, q:'', classId:'all', status:'', statusBad:false, busy:false, log:[], logMsg:'Loading…'};
-function okMail(p){ return validEmail(normEmail(p.email)); }
-function mailTeachers(){ return DB.teachers.filter(t=>t.status!=='Inactive'); }
-function mailStudents(){
-  const q=MAIL_UI.q.trim().toLowerCase();
-  return DB.students.filter(s=>s.status!=='Inactive' && (MAIL_UI.classId==='all'||s.classId===MAIL_UI.classId) && (!q||((s.name||'')+' '+(s.regNo||'')).toLowerCase().includes(q)));
-}
-function mailInit(){
-  if(!MAIL_UI.pT) MAIL_UI.pT=new Set(mailTeachers().filter(okMail).map(t=>t.id));
-  if(!MAIL_UI.pS) MAIL_UI.pS=new Set();
-}
-function mailRowHtml(p, set, attr, sub){
-  const ok=okMail(p);
-  return '<label style="display:flex;gap:8px;align-items:center;margin:0 0 6px;color:var(--ink);'+(ok?'':'opacity:.55;')+'"><input type="checkbox" style="width:auto;" '+attr+'="'+p.id+'" '+(ok&&set.has(p.id)?'checked':'')+' '+(ok?'':'disabled')+'/> '+escapeHtml(p.name)+' <span style="color:var(--muted);font-size:.8rem;">'+escapeHtml(sub)+' · '+(ok?escapeHtml(p.email):'no email on file')+'</span></label>';
-}
-function recipientsHtml(){
-  const box='max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:var(--radius);padding:8px 12px;background:var(--surface);margin-bottom:10px;';
-  let h='';
-  if(MAIL_UI.aud!=='students'){
-    const ts=mailTeachers();
-    h+='<div style="font-size:.8rem;color:var(--muted);margin-bottom:4px;">Teachers</div><div style="'+box+'">'+(ts.length?ts.map(t=>mailRowHtml(t,MAIL_UI.pT,'data-mr-t','Teacher')).join(''):'<span class="sub">No active teachers.</span>')+'</div>';
-  }
-  if(MAIL_UI.aud!=='teachers'){
-    const ss=mailStudents();
-    h+='<div style="font-size:.8rem;color:var(--muted);margin-bottom:4px;">Students ('+ss.length+' shown)</div><div style="'+box+'">'+(ss.length?ss.map(s=>{ const c=DB.classes.find(x=>x.id===s.classId); return mailRowHtml(s,MAIL_UI.pS,'data-mr-s',clsLabel(c)); }).join(''):'<span class="sub">No students match.</span>')+'</div>';
-  }
-  return h;
-}
-function selCount(){
-  const t=MAIL_UI.aud!=='students'?[...MAIL_UI.pT].filter(id=>{const x=DB.teachers.find(y=>y.id===id);return x&&okMail(x);}).length:0;
-  const s=MAIL_UI.aud!=='teachers'?[...MAIL_UI.pS].filter(id=>{const x=DB.students.find(y=>y.id===id);return x&&okMail(x);}).length:0;
-  return {t,s};
-}
-function btnGroup(id, opts, cur){
-  return '<div class="toggle-group" id="'+id+'" style="flex-wrap:wrap;">'+opts.map(o=>'<button type="button" class="toggle-btn '+(cur===o[0]?'active-present':'')+'" data-v="'+o[0]+'">'+o[1]+'</button>').join('')+'</div>';
-}
+
+/* ---- sent-mail log (shown on Admin > Admin Account) ---- */
+const MAIL_UI = {log:[], logMsg:'Loading…'};
 function decMailDoc(d){
   const f=d.fields||{}, g=k=>f[k]&&('stringValue' in f[k])?f[k].stringValue:'';
   const msg=f.message&&f.message.mapValue?f.message.mapValue.fields||{}:{};
@@ -3213,114 +3212,289 @@ async function loadMailLog(){
     const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:25}});
     MAIL_UI.log=items.filter(i=>i.document).map(i=>decMailDoc(i.document));
     MAIL_UI.logMsg=MAIL_UI.log.length?'':'No emails yet.';
-  }catch(e){ MAIL_UI.log=[]; MAIL_UI.logMsg='Could not load the email log ('+e.message+'). Publish the updated Firestore rules (card below) so the "mail" collection is allowed.'; }
+  }catch(e){ MAIL_UI.log=[]; MAIL_UI.logMsg='Could not load the email log ('+e.message+'). Publish the updated Firestore rules (Settings) so the "mail" collection is allowed.'; }
 }
 function mailLogHtml(){
   if(!MAIL_UI.log.length) return '<p class="sub">'+escapeHtml(MAIL_UI.logMsg)+'</p>';
-  return '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>When</th><th>To</th><th>Subject</th><th>Sent by</th><th>Status</th></tr></thead><tbody>'
+  return '<div style="overflow-x:auto;"><table class="table"><thead><tr><th>When</th><th>To</th><th>Subject</th><th>Type</th><th>Status</th></tr></thead><tbody>'
     + MAIL_UI.log.map(m=>{
       const s=m.state==='SUCCESS'?['success','Delivered']:m.state==='ERROR'?['danger','Failed']:['warning','Queued'];
-      return '<tr><td>'+(m.createdAt?escapeHtml(new Date(m.createdAt).toLocaleString()):DASH)+'</td><td>'+escapeHtml(m.to)+'</td><td>'+escapeHtml(m.subject)+'</td><td>'+(m.by==='auto'?'Automatic':'Manual')+'</td><td><span class="badge badge-'+s[0]+'" '+(m.error?'title="'+escapeHtml(m.error)+'"':'')+'>'+s[1]+'</span></td></tr>';
+      return '<tr><td>'+(m.createdAt?escapeHtml(new Date(m.createdAt).toLocaleString()):DASH)+'</td><td>'+escapeHtml(m.to)+'</td><td>'+escapeHtml(m.subject)+'</td><td>'+(m.by==='system'?'Login / security':'Attendance')+'</td><td><span class="badge badge-'+s[0]+'" '+(m.error?'title="'+escapeHtml(m.error)+'"':'')+'>'+s[1]+'</span></td></tr>';
     }).join('')+'</tbody></table></div>';
 }
-function renderAdminReminders(){
-  mailInit();
-  const on=autoOn(), conn=BACKEND_ON();
-  if(MAIL_UI.aud==='teachers' && MAIL_UI.type==='attendance') MAIL_UI.type='today';
-  let html='<div class="page-head"><div><h1>Email Reminders</h1><div class="sub">Class reminders for teachers — automatic, with a manual option for teachers and students.</div></div></div>';
-  if(!conn) html+='<div class="card"><p class="form-msg err" style="margin:0;">Emails need the shared database. Connect it in Settings first.</p></div>';
 
-  html+='<div class="card"><h3>Automatic reminders <span class="status-pill '+(on?'status-connected':'status-disconnected')+'" style="margin-left:8px;">'+(on?'On':'Off')+'</span></h3>'
-    + '<p class="sub" style="margin:8px 0 12px;">When on, each teacher is emailed shortly before every class, using the lead time set on their record (Teachers page). Skipped on Sundays and holidays, and the same reminder is never sent twice. Sending happens while the app is open in an admin or teacher browser.</p>'
-    + '<div class="btn-row"><button class="btn '+(on?'btn-ghost':'btn-primary')+'" id="auto-toggle">'+(on?'Turn automatic reminders off':'Turn automatic reminders on')+'</button></div>'
-    + '<div class="sub" style="margin-top:10px;">This session: '+AUTO.sent+' automatic email'+(AUTO.sent===1?'':'s')+' queued'+(AUTO.lastAt?' · last at '+escapeHtml(new Date(AUTO.lastAt).toLocaleTimeString()):'')+'.'
-    + (AUTO.lastErr?' <span style="color:var(--danger)">Last error: '+escapeHtml(AUTO.lastErr)+'</span>':'')+'</div></div>';
+/* ============================= ADMIN > MAIL REMINDER ============================= */
+/* Manual e-mail reminders: pick who (teachers / students / everyone), what (today's or tomorrow's classes, or a custom
+   message) and tick individual recipients. Mails are queued in the Firestore "mail" collection (same delivery path as
+   attendance mails). Every mail sent is listed below, where it can be deleted or printed. */
+const MR = {who:'teachers', what:'today', cls:'all', q:'', sel:new Set(), init:false,
+  sub:'', body:'Dear {name},\n\n', note:'', extra:'', view:'all', log:[], msg:'Loading…', loaded:false};
+function mrDay(offset){
+  const d=new Date(); d.setDate(d.getDate()+offset);
+  return {date:d.toLocaleDateString('en-CA'), day:JS_DAY_TO_NAME[d.getDay()],
+    label:d.toLocaleDateString(undefined,{weekday:'long', day:'numeric', month:'short', year:'numeric'})};
+}
+function mrInfo(){ return MR.what==='custom' ? null : mrDay(MR.what==='tomorrow'?1:0); }
+function mrOffReason(info){
+  if(!info) return '';
+  if(WEEKDAYS.indexOf(info.day)===-1) return 'Sunday';
+  const h=holidaysOn(info.date)[0]; return h ? 'Holiday: '+h.name : '';
+}
+function mrBodyHtml(text){ return '<p>'+escapeHtml(text).replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>')+'</p>'; }
+function mrFill(tpl, vars){ return String(tpl).replace(/\{(name|regNo|pct)\}/g,(m,k)=>vars[k]!==undefined?vars[k]:m); }
 
-  html+='<div class="card"><h3>Send a reminder manually</h3>'
-    + '<div class="field" style="margin-top:12px;"><label>1. Who should get it?</label>'+btnGroup('mr-aud',[['teachers','Teachers'],['students','Students'],['all','Everyone']],MAIL_UI.aud)+'</div>'
-    + '<div class="field"><label>2. What to send</label><div id="mr-types"></div></div>'
-    + '<div id="mr-custom" style="display:'+(MAIL_UI.type==='custom'?'block':'none')+';"><div class="field"><label>Subject</label><input id="mr-subject" maxlength="150"/></div><div class="field"><label>Message</label><textarea id="mr-body" rows="4" maxlength="2000"></textarea></div></div>'
-    + '<div class="field"><label>3. Pick recipients</label>'
-    + '<div class="btn-row" style="margin-bottom:10px;"><button type="button" class="btn btn-ghost btn-sm" id="mr-selall">Select all shown</button><button type="button" class="btn btn-ghost btn-sm" id="mr-clear">Clear</button>'
-    + '<button type="button" class="btn btn-ghost btn-sm" id="mr-low" style="'+(MAIL_UI.aud==='teachers'?'display:none':'')+'">Students below 75%</button></div>'
-    + '<div class="form-row" id="mr-filters" style="'+(MAIL_UI.aud==='teachers'?'display:none':'')+'"><div class="field"><label>Student class</label><select id="mr-class"><option value="all">All classes</option>'+DB.classes.map(c=>'<option value="'+c.id+'" '+(MAIL_UI.classId===c.id?'selected':'')+'>'+escapeHtml(clsLabel(c))+'</option>').join('')+'</select></div>'
-    + '<div class="field"><label>Search student</label><input id="mr-q" placeholder="Name or reg. no." value="'+escapeHtml(MAIL_UI.q)+'"/></div></div>'
-    + '<div id="mr-recips">'+recipientsHtml()+'</div></div>'
-    + '<div class="btn-row"><button class="btn btn-primary" id="mr-send" '+(conn?'':'disabled')+'>Send reminder now</button><span class="sub" id="mr-count"></span></div>'
-    + '<div class="form-msg '+(MAIL_UI.statusBad?'err':'ok')+'" id="mr-status">'+escapeHtml(MAIL_UI.status)+'</div></div>';
+/* ---- people ---- */
+function mrClassLines(entries, role){
+  return entries.map(tt=>{
+    const su=DB.subjects.find(x=>x.id===tt.subjectId), c=DB.classes.find(x=>x.id===tt.classId);
+    const what=su?su.name:(tt.text||'Class');
+    const tail=role==='teacher' ? clsLabel(c) : (su?teacherName(su):'');
+    return 'P'+tt.period+(PERIOD_TIMES[tt.period]?' ('+PERIOD_TIMES[tt.period]+')':'')+' · '+what+(tail?' · '+tail:'');
+  });
+}
+function mrPeople(ignoreSearch){
+  const info=mrInfo(), off=mrOffReason(info), out=[], q=ignoreSearch?'':MR.q.trim().toLowerCase();
+  const add=(key,role,name,email,regNo,entries,extra)=>{
+    const e=normEmail(email), valid=validEmail(e);
+    let dis='';
+    if(!valid) dis='no email on file';
+    else if(info && !entries.length) dis=off||'no classes';
+    if(q && !(name.toLowerCase().includes(q)||e.includes(q)||String(regNo||'').toLowerCase().includes(q))) return;
+    out.push({key,role,name,email:e,regNo:regNo||'',entries,dis,extra:extra||''});
+  };
+  if(MR.who!=='students') DB.teachers.filter(t=>t.status!=='Inactive').forEach(t=>
+    add('t:'+t.id,'teacher',t.name,t.email,'',info&&!off?teacherClassesOn(t,info.day):[], 'Teacher'));
+  if(MR.who!=='teachers') DB.students.filter(s=>s.status!=='Inactive' && (MR.cls==='all'||s.classId===MR.cls))
+    .slice().sort((a,b)=>String(a.regNo).localeCompare(String(b.regNo))).forEach(s=>
+    add('s:'+s.id,'student',s.name,s.email,s.regNo,info&&!off?DB.timetable.filter(tt=>tt.classId===s.classId&&tt.day===info.day).sort((a,b)=>a.period-b.period):[],
+      'Student · '+s.regNo+' · '+clsLabel(DB.classes.find(c=>c.id===s.classId))));
+  return out;
+}
+function mrResetSel(){ MR.sel=new Set(mrPeople(true).filter(p=>!p.dis).map(p=>p.key)); }
+function mrChosen(){ return mrPeople(true).filter(p=>!p.dis && MR.sel.has(p.key)); }
+function mrExtraList(){ return MR.what==='custom' ? MR.extra.split(/[\s,;]+/).map(normEmail).filter(validEmail) : []; }
 
+function mrPeopleHtml(){
+  const ppl=mrPeople(false);
+  if(!ppl.length) return '<p class="sub" style="margin:6px 0;">No one found.</p>';
+  const row=p=>'<label class="mr-row '+(p.dis?'dis':'')+'"><input type="checkbox" data-mrp="'+escapeHtml(p.key)+'" '+(p.dis?'disabled':(MR.sel.has(p.key)?'checked':''))+'/>'
+    +'<b>'+escapeHtml(p.name)+'</b><span>'+escapeHtml(p.extra)+' · '+(p.dis?escapeHtml(p.dis):escapeHtml(p.email))+(!p.dis&&mrInfo()?' · '+p.entries.length+' class'+(p.entries.length===1?'':'es'):'')+'</span></label>';
+  if(MR.who==='everyone'){
+    const t=ppl.filter(p=>p.role==='teacher'), s=ppl.filter(p=>p.role==='student');
+    return (t.length?'<div class="mr-grp">Teachers</div>'+t.map(row).join(''):'')+(s.length?'<div class="mr-grp">Students</div>'+s.map(row).join(''):'');
+  }
+  return ppl.map(row).join('');
+}
+function mrMailFor(p){
+  const info=mrInfo();
+  if(!info) return {subject:MR.sub.trim(), text:mrFill(MR.body,{name:p.name, regNo:p.regNo, pct:p.role==='student'?overallStatsForStudent(p.key.slice(2)).pct:''})};
+  const when=MR.what==='tomorrow'?'tomorrow':'today';
+  return {subject:'Class reminder — '+when+' ('+info.label+')',
+    text:'Hello '+p.name+',\n\nYour classes for '+when+' ('+info.label+'):\n'+mrClassLines(p.entries,p.role).join('\n')+(MR.note.trim()?'\n\n'+MR.note.trim():'')+'\n\nRegards,\n'+collegeName()};
+}
+function mrUpdateCount(){
+  const ch=mrChosen(), t=ch.filter(p=>p.role==='teacher').length, s=ch.length-t, ex=mrExtraList().length;
+  const parts=[]; if(t) parts.push(t+' teacher'+(t===1?'':'s')); if(s) parts.push(s+' student'+(s===1?'':'s')); if(ex) parts.push(ex+' other address'+(ex===1?'':'es'));
+  const c=$('#mr-count'); if(c) c.textContent=parts.length?parts.join(' + ')+' selected':'No one selected';
+  const pv=$('#mr-prev'); if(pv){ const first=ch[0]; if(first && mrInfo()){ const m=mrMailFor(first); pv.style.display='block'; pv.textContent='Preview (for '+first.name+')\nSubject: '+m.subject+'\n\n'+m.text; } else pv.style.display='none'; }
+}
+function mrRefreshPeople(){ const b=$('#mr-people'); if(!b) return; b.innerHTML=mrPeopleHtml(); mrBindPeople(); mrUpdateCount(); }
+function mrBindPeople(){
+  $all('[data-mrp]').forEach(cb=>cb.addEventListener('change',()=>{ cb.checked?MR.sel.add(cb.dataset.mrp):MR.sel.delete(cb.dataset.mrp); mrUpdateCount(); }));
+}
+
+/* ---- sent-mail list (load / delete / print) ---- */
+async function mrLoad(){
+  if(!BACKEND_ON()){ MR.log=[]; MR.msg='Connect the database in Settings to send and see mails.'; return; }
+  try{
+    const c=getSupabaseCfg();
+    const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:300}});
+    MR.log=items.filter(i=>i.document).map(i=>{ const m=decMailDoc(i.document); m.id=i.document.name.split('/').pop();
+      const k=i.document.fields&&i.document.fields.kind; m.kind=k&&k.stringValue?k.stringValue:''; return m; })
+      .filter(m=>m.kind.indexOf('reminder-')===0);
+    MR.msg='';
+  }catch(e){ MR.log=[]; MR.msg='Could not load the mail list ('+e.message+'). Publish the updated Firestore rules (Settings) so the "mail" collection is allowed.'; }
+}
+const MR_VIEWS=[['all','All'],['teachers','Teachers'],['students','Students'],['custom','Other']];
+function mrRows(){ return MR.view==='all' ? MR.log : MR.log.filter(m=>m.kind==='reminder-'+MR.view); }
+function mrListTable(){
+  const rows=mrRows();
+  if(!rows.length) return '<p class="sub">'+escapeHtml(MR.msg||'No mails sent yet.')+'</p>';
+  const allOn=rows.every(m=>MR.lsel.has(m.id));
+  return '<div style="overflow-x:auto;"><table class="table"><thead><tr><th style="width:34px;"><input type="checkbox" id="mr-all" '+(allOn?'checked':'')+' aria-label="Select all"/></th><th>When</th><th>To</th><th>Subject</th><th>Status</th></tr></thead><tbody>'
+    + rows.map(m=>{
+      const s=m.state==='SUCCESS'?['success','Delivered']:m.state==='ERROR'?['danger','Failed']:['warning','Queued'];
+      return '<tr><td><input type="checkbox" data-mrsel="'+escapeHtml(m.id)+'" '+(MR.lsel.has(m.id)?'checked':'')+'/></td><td>'+(m.createdAt?escapeHtml(new Date(m.createdAt).toLocaleString()):DASH)+'</td><td>'+escapeHtml(m.to)+'</td><td>'+escapeHtml(m.subject)+'</td><td><span class="badge badge-'+s[0]+'" '+(m.error?'title="'+escapeHtml(m.error)+'"':'')+'>'+s[1]+'</span></td></tr>';
+    }).join('')+'</tbody></table></div>';
+}
+MR.lsel=new Set();
+function mrRenderListCard(){
+  const host=$('#mr-listcard'); if(!host) return;
+  const rows=mrRows(), k=[...MR.lsel].filter(id=>rows.some(m=>m.id===id)).length;
+  host.innerHTML='<h3>Sent mail list <span class="muted" style="font-weight:400;">('+rows.length+')</span></h3>'
+    +'<div style="margin:10px 0 4px;">'+MR_VIEWS.map(v=>'<button class="mr-chip '+(MR.view===v[0]?'on':'')+'" data-mrview="'+v[0]+'">'+v[1]+'</button>').join('')+'</div>'
+    +'<div class="btn-row" style="margin:6px 0 10px;">'
+    +'<button class="btn btn-ghost btn-sm" id="mr-print" '+(rows.length?'':'disabled')+'>🖨 Print list</button>'
+    +'<button class="btn btn-danger btn-sm" id="mr-del-sel" '+(k?'':'disabled')+'>Delete selected ('+k+')</button>'
+    +'<button class="btn btn-danger btn-sm" id="mr-del-all" '+(rows.length?'':'disabled')+'>Delete entire list</button>'
+    +'<button class="btn btn-ghost btn-sm" id="mr-refresh">Refresh</button></div>'+mrListTable();
+  $all('[data-mrview]').forEach(b=>b.addEventListener('click',()=>{ MR.view=b.dataset.mrview; mrRenderListCard(); }));
+  const all=$('#mr-all'); if(all) all.addEventListener('change',e=>{ rows.forEach(m=>e.target.checked?MR.lsel.add(m.id):MR.lsel.delete(m.id)); mrRenderListCard(); });
+  $all('[data-mrsel]').forEach(cb=>cb.addEventListener('change',()=>{ cb.checked?MR.lsel.add(cb.dataset.mrsel):MR.lsel.delete(cb.dataset.mrsel); mrRenderListCard(); }));
+  $('#mr-print').addEventListener('click',mrPrint);
+  $('#mr-refresh').addEventListener('click',async()=>{ await mrLoad(); mrRenderListCard(); });
+  $('#mr-del-sel').addEventListener('click',()=>{ const ids=[...MR.lsel].filter(id=>rows.some(m=>m.id===id)); if(ids.length && confirm('Delete '+ids.length+' selected mail'+(ids.length>1?'s':'')+' from the list? This cannot be undone.')) mrDelete(ids); });
+  $('#mr-del-all').addEventListener('click',()=>{ const ids=rows.map(m=>m.id); if(ids.length && confirm('Delete the entire list shown ('+ids.length+' mails)? This cannot be undone.\n\nTip: use Print list first if you want a copy.')) mrDelete(ids); });
+}
+async function mrDelete(ids){
+  const c=getSupabaseCfg();
+  try{
+    for(let i=0;i<ids.length;i+=400) await fsPost(c,':commit',{writes:ids.slice(i,i+400).map(id=>({delete:fsRoot(c)+'/mail/'+id}))});
+    MR.log=MR.log.filter(m=>!ids.includes(m.id)); ids.forEach(id=>MR.lsel.delete(id));
+    showToast('Deleted', ids.length+' mail'+(ids.length>1?'s':'')+' removed from the list.');
+  }catch(e){ alert('Could not delete ('+e.message+'). Check the database rules and connection.'); }
+  mrRenderListCard();
+}
+function mrPrint(){
+  const rows=mrRows(), label=MR_VIEWS.find(v=>v[0]===MR.view)[1];
+  const td='padding:6px;border-bottom:1px solid #ccc;', th='padding:6px;text-align:left;border-bottom:2px solid #000;';
+  const st=m=>m.state==='SUCCESS'?'Delivered':m.state==='ERROR'?'Failed':'Queued';
+  printReport('<h2 style="margin:0 0 4px;">'+escapeHtml(collegeName())+'</h2><h3 style="margin:0 0 4px;">Mail reminder list — '+escapeHtml(label)+'</h3>'
+    +'<p style="margin:0 0 12px;font-size:12px;">Printed '+escapeHtml(new Date().toLocaleString())+' · '+rows.length+' mail'+(rows.length===1?'':'s')+'</p>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr><th style="'+th+'">#</th><th style="'+th+'">When</th><th style="'+th+'">To</th><th style="'+th+'">Subject</th><th style="'+th+'">Status</th></tr></thead><tbody>'
+    +rows.map((m,i)=>'<tr><td style="'+td+'">'+(i+1)+'</td><td style="'+td+'">'+escapeHtml(m.createdAt?new Date(m.createdAt).toLocaleString():'')+'</td><td style="'+td+'">'+escapeHtml(m.to)+'</td><td style="'+td+'">'+escapeHtml(m.subject)+'</td><td style="'+td+'">'+st(m)+'</td></tr>').join('')
+    +'</tbody></table>');
+}
+
+/* ---- send ---- */
+async function mrSend(){
+  const msg=$('#mr-msg'), btn=$('#mr-send'), err=t=>{ msg.className='form-msg err'; msg.textContent=t; };
+  if(!BACKEND_ON()) return err('Connect the database in Settings first.');
+  const custom=MR.what==='custom';
+  if(custom && !MR.sub.trim()) return err('Enter a subject.');
+  if(custom && !MR.body.replace(/\{name\}/g,'').trim()) return err('Write a message.');
+  const items=mrChosen().map(p=>{ const m=mrMailFor(p); return {to:p.email, subject:m.subject, text:m.text, kind:p.role==='teacher'?'reminder-teachers':'reminder-students'}; });
+  mrExtraList().forEach(to=>items.push({to, subject:MR.sub.trim(), text:mrFill(MR.body,{name:'Sir/Madam'}), kind:'reminder-custom'}));
+  if(!items.length) return err('Select at least one recipient.');
+  if(!confirm('Send this reminder to '+items.length+' recipient'+(items.length>1?'s':'')+'?')) return;
+  btn.disabled=true; let ok=0, fail=0;
+  for(let i=0;i<items.length;i++){
+    msg.className='form-msg'; msg.textContent='Sending '+(i+1)+' of '+items.length+'…';
+    try{ await queueMail(uid('rem_'),{to:items[i].to,subject:items[i].subject,text:items[i].text,html:mailWrap(items[i].subject,mrBodyHtml(items[i].text)),kind:items[i].kind,by:'reminder'},false); ok++; }
+    catch(e){ fail++; }
+  }
+  btn.disabled=false;
+  await mrLoad(); mrRenderListCard();
+  msg.className='form-msg '+(fail?'err':'ok'); msg.textContent=ok+' queued'+(fail?', '+fail+' failed (check database rules).':'. They are delivered within a minute.');
+}
+
+/* ---- screen ---- */
+function renderAdminMailReminder(){
+  if(!MR.init){ MR.init=true; mrResetSel(); }
+  const info=mrInfo(), off=mrOffReason(info), custom=MR.what==='custom';
+  const chip=(attr,val,cur,label)=>'<button class="mr-chip '+(cur===val?'on':'')+'" '+attr+'="'+val+'">'+label+'</button>';
+  let h='<div class="page-head"><div><h1>Email Reminders</h1><div class="sub">Send class reminders or custom messages to teachers and students, then print or clear the sent list.</div></div></div>';
+  h+='<div class="card"><h3>Send a reminder manually</h3>'
+    +'<p class="sub" style="margin:10px 0 6px;">1. Who should get it?</p><div>'+chip('data-mrwho','teachers',MR.who,'Teachers')+chip('data-mrwho','students',MR.who,'Students')+chip('data-mrwho','everyone',MR.who,'Everyone')+'</div>'
+    +'<p class="sub" style="margin:8px 0 6px;">2. What to send</p><div>'+chip('data-mrwhat','today',MR.what,'Today\'s classes')+chip('data-mrwhat','tomorrow',MR.what,'Tomorrow\'s classes')+chip('data-mrwhat','custom',MR.what,'Custom message')+'</div>';
+  if(info) h+='<p class="sub" style="margin:2px 0 10px;">'+escapeHtml(info.label)+(off?' — <b>'+escapeHtml(off)+'</b>, so there are no classes to remind about.':' — each person gets their own class list.')+'</p>'
+    +'<div class="field"><label>Extra note <span class="muted">(optional, added to the end)</span></label><input id="mr-note" maxlength="300" value="'+escapeHtml(MR.note)+'"/></div>';
+  else h+='<div class="field" style="margin-top:6px;"><label>Subject</label><input id="mr-sub" maxlength="150" value="'+escapeHtml(MR.sub)+'"/></div>'
+    +'<div class="field"><label>Message <span class="muted">({name} is replaced by each person\'s name; {regNo} and {pct} work for students)</span></label><textarea id="mr-body" rows="6">'+escapeHtml(MR.body)+'</textarea></div>'
+    +'<div class="field"><label>Other e-mail addresses <span class="muted">(optional, comma separated)</span></label><input id="mr-extra" placeholder="name@example.com, other@example.com" value="'+escapeHtml(MR.extra)+'"/></div>';
+  h+='<p class="sub" style="margin:8px 0 6px;">3. Pick recipients</p>'
+    +'<div class="btn-row" style="margin-bottom:8px;"><button class="btn btn-ghost btn-sm" id="mr-selall">Select all shown</button><button class="btn btn-ghost btn-sm" id="mr-clear">Clear</button></div>'
+    +'<div class="form-row">'+(MR.who!=='teachers'?'<div class="field"><label>Class</label><select id="mr-cls"><option value="all">All classes</option>'+DB.classes.map(c=>'<option value="'+c.id+'" '+(MR.cls===c.id?'selected':'')+'>'+escapeHtml(clsLabel(c))+'</option>').join('')+'</select></div>':'')
+    +'<div class="field"><label>Search</label><input id="mr-q" placeholder="Name, reg. no. or email" value="'+escapeHtml(MR.q)+'"/></div></div>'
+    +'<div class="mr-box" id="mr-people">'+mrPeopleHtml()+'</div>'
+    +'<div class="btn-row" style="margin-top:14px;align-items:center;"><button class="btn btn-primary" id="mr-send">Send reminder now</button><span class="sub" id="mr-count"></span></div>'
+    +'<div class="form-msg" id="mr-msg" role="alert"></div><pre id="mr-prev" class="mr-prev" style="display:none;"></pre></div>'
+    +'<div class="card" id="mr-listcard"></div>';
+  $('#admin-content').innerHTML=h;
+  const re=()=>renderAdminMailReminder();
+  $all('[data-mrwho]').forEach(b=>b.addEventListener('click',()=>{ MR.who=b.dataset.mrwho; MR.cls='all'; MR.q=''; mrResetSel(); re(); }));
+  $all('[data-mrwhat]').forEach(b=>b.addEventListener('click',()=>{ MR.what=b.dataset.mrwhat; mrResetSel(); re(); }));
+  const on=(id,ev,fn)=>{ const e=$(id); if(e) e.addEventListener(ev,fn); };
+  on('#mr-note','input',e=>{ MR.note=e.target.value; mrUpdateCount(); });
+  on('#mr-sub','input',e=>{ MR.sub=e.target.value; });
+  on('#mr-body','input',e=>{ MR.body=e.target.value; });
+  on('#mr-extra','input',e=>{ MR.extra=e.target.value; mrUpdateCount(); });
+  on('#mr-cls','change',e=>{ MR.cls=e.target.value; mrResetSel(); re(); });
+  on('#mr-q','input',e=>{ MR.q=e.target.value; mrRefreshPeople(); });
+  on('#mr-selall','click',()=>{ mrPeople(false).filter(p=>!p.dis).forEach(p=>MR.sel.add(p.key)); mrRefreshPeople(); });
+  on('#mr-clear','click',()=>{ mrPeople(false).forEach(p=>MR.sel.delete(p.key)); mrRefreshPeople(); });
+  on('#mr-send','click',mrSend);
+  mrBindPeople(); mrUpdateCount(); mrRenderListCard();
+  if(!MR.loaded){ MR.loaded=true; mrLoad().then(()=>{ if(state.adminTab==='mailreminder') mrRenderListCard(); }); }
+}
+
+/* ============================= ADMIN ACCOUNT TAB ============================= */
+function renderAdminAccount(){
+  const A=adminAccount(), conn=BACKEND_ON();
+  let html='<div class="page-head"><div><h1>Admin Account</h1><div class="sub">The single administrator login. Sign-in asks for your password and a code e-mailed to the admin address below.</div></div></div>';
+  if(!A.email) html+='<div class="card"><p class="form-msg err" style="margin:0;"><b>No admin e-mail is set.</b> Until you add one below, admin sign-in is protected by the password only. Enter your admin e-mail, your current password, and verify it with the code we send.</p></div>';
+  if(!conn) html+='<div class="card"><p class="form-msg err" style="margin:0;">Codes are sent by e-mail through the shared database. Connect it in Settings first.</p></div>';
+  html+='<div class="card"><h3>Admin details</h3>'
+    +'<p class="sub" style="margin:8px 0 12px;">Current admin e-mail: <b>'+(A.email?escapeHtml(A.email):'not set')+'</b>. Changing the e-mail or password needs your current password and a verification code (sent to the new address if the e-mail changes, otherwise to the current one).</p>'
+    +'<div class="form-grid">'
+    +'<div class="field"><label>Admin e-mail</label><input id="ac-email" type="email" maxlength="254" autocomplete="off" value="'+escapeHtml(A.email)+'"/></div>'
+    +'<div class="field"><label>New password <span class="muted">(leave blank to keep)</span></label><input id="ac-new" type="password" autocomplete="new-password" minlength="8"/></div>'
+    +'<div class="field"><label>Confirm new password</label><input id="ac-new2" type="password" autocomplete="new-password"/></div>'
+    +'<div class="field"><label>Current password</label><input id="ac-cur" type="password" autocomplete="current-password"/></div>'
+    +'</div><div class="btn-row"><button class="btn btn-primary" id="ac-save" '+(conn?'':'disabled')+'>Send verification code</button></div>'
+    +'<div id="ac-otp" style="display:none;margin-top:14px;"><div class="field" style="max-width:260px;"><label>Enter the 6-digit code sent to <b id="ac-otp-to"></b></label><input id="ac-code" class="otp-input" inputmode="numeric" maxlength="6" placeholder="------"/></div>'
+    +'<div class="btn-row"><button class="btn btn-primary" id="ac-confirm">Confirm &amp; save</button><button class="btn btn-ghost" id="ac-resend">Resend code</button><button class="btn btn-ghost" id="ac-cancel">Cancel</button></div></div>'
+    +'<div class="form-msg" id="ac-msg" role="alert"></div></div>';
   html+='<div class="card"><div class="mark-toolbar"><h3>Recent emails</h3><button class="btn btn-ghost btn-sm" id="mr-refresh">Refresh</button></div><div id="mr-log">'+mailLogHtml()+'</div></div>';
-
-  html+='<div class="card"><h3>One-time setup: email delivery</h3><p class="sub">This app queues each email in your Firestore database; Firebase sends it. 1) In Firebase console open <b>Extensions</b> and install <b>Trigger Email from Firestore</b>. 2) Set the collection to <b>mail</b> and enter your SMTP details (for example a Gmail app password or any mail service). 3) In Settings, copy the updated rules (they include <b>mail</b>) into Firestore &gt; Rules and Publish. Until this is done, emails stay "Queued".</p></div>';
+  html+='<div class="card"><h3>One-time setup: email delivery</h3><p class="sub">This app queues each email (admin login codes and attendance confirmations to teachers) in your Firestore database; Firebase sends it. 1) In Firebase console open <b>Extensions</b> and install <b>Trigger Email from Firestore</b>. 2) Set the collection to <b>mail</b> and enter your SMTP details (for example a Gmail app password or any mail service). 3) In Settings, copy the updated rules (they include <b>mail</b>) into Firestore &gt; Rules and Publish. Until this is done, emails stay "Queued" and admin login codes will not arrive.</p></div>';
   $('#admin-content').innerHTML=html;
 
-  const paintTypes=()=>{
-    const opts=[['today',"Today's classes"],['tomorrow',"Tomorrow's classes"]];
-    if(MAIL_UI.aud!=='teachers') opts.push(['attendance','Attendance summary (students)']);
-    opts.push(['custom','Custom message']);
-    $('#mr-types').innerHTML=btnGroup('mr-type',opts,MAIL_UI.type);
-    $all('#mr-type [data-v]').forEach(b=>b.addEventListener('click',()=>{ MAIL_UI.type=b.dataset.v; paintTypes(); $('#mr-custom').style.display=MAIL_UI.type==='custom'?'block':'none'; }));
-  };
-  const paintCount=()=>{ const c=selCount(); $('#mr-count').textContent=(MAIL_UI.aud!=='students'?c.t+' teacher'+(c.t===1?'':'s'):'')+(MAIL_UI.aud==='all'?' + ':'')+(MAIL_UI.aud!=='teachers'?c.s+' student'+(c.s===1?'':'s'):'')+' selected'; };
-  const paintRecips=()=>{
-    $('#mr-recips').innerHTML=recipientsHtml();
-    $all('[data-mr-t]').forEach(cb=>cb.addEventListener('change',()=>{ cb.checked?MAIL_UI.pT.add(cb.dataset.mrT):MAIL_UI.pT.delete(cb.dataset.mrT); paintCount(); }));
-    $all('[data-mr-s]').forEach(cb=>cb.addEventListener('change',()=>{ cb.checked?MAIL_UI.pS.add(cb.dataset.mrS):MAIL_UI.pS.delete(cb.dataset.mrS); paintCount(); }));
-    paintCount();
-  };
-  paintTypes(); paintRecips();
-
-  $('#auto-toggle').addEventListener('click',()=>{ setSetting('autoRemind',{on:!autoOn()}); renderAdminReminders(); });
-  $all('#mr-aud [data-v]').forEach(b=>b.addEventListener('click',()=>{
-    MAIL_UI.aud=b.dataset.v;
-    if(MAIL_UI.aud!=='students') MAIL_UI.pT=new Set(mailTeachers().filter(okMail).map(t=>t.id));
-    if(MAIL_UI.aud!=='teachers') MAIL_UI.pS=new Set(mailStudents().filter(okMail).map(s=>s.id));
-    renderAdminReminders();
-  }));
-  $('#mr-selall').addEventListener('click',()=>{
-    if(MAIL_UI.aud!=='students') mailTeachers().filter(okMail).forEach(t=>MAIL_UI.pT.add(t.id));
-    if(MAIL_UI.aud!=='teachers') mailStudents().filter(okMail).forEach(s=>MAIL_UI.pS.add(s.id));
-    paintRecips();
+  const msg=(t,ok)=>{ const m=$('#ac-msg'); m.textContent=t; m.className='form-msg '+(ok?'ok':'err'); };
+  let pending=null;
+  const closeOtp=()=>{ otpDrop('acct'); pending=null; $('#ac-otp').style.display='none'; $('#ac-save').style.display=''; };
+  $('#ac-save').addEventListener('click', async ()=>{
+    if(lockLeft()>0){ msg('Too many wrong attempts. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
+    const email=normEmail($('#ac-email').value), np=$('#ac-new').value, np2=$('#ac-new2').value, cur=$('#ac-cur').value;
+    if(!validEmail(email)){ msg('Enter a valid admin e-mail address.'); return; }
+    if(np && np.length<8){ msg('New password must be at least 8 characters.'); return; }
+    if(np && !(/[A-Za-z]/.test(np) && /\d/.test(np))){ msg('New password must contain at least one letter and one number.'); return; }
+    if(np!==np2){ msg('The two new passwords do not match.'); return; }
+    if(email===A.email && !np){ msg('Nothing to change.'); return; }
+    if(!cur || (await hashPw(cur,'admin'))!==A.h){ failLogin(); msg('Current password is incorrect.'); $('#ac-cur').value=''; return; }
+    okLogin();
+    const dest=(email!==A.email || !A.email) ? email : A.email;
+    $('#ac-save').disabled=true; msg('Sending code…',true);
+    try{ await otpIssue('acct', dest, 'acct'); }
+    catch(e){ msg('Could not send the code ('+e.message+'). Check the database rules and e-mail delivery setup.'); $('#ac-save').disabled=false; return; }
+    pending={email, h: np ? await hashPw(np,'admin') : null};
+    $('#ac-save').disabled=false; $('#ac-save').style.display='none';
+    $('#ac-otp-to').textContent=maskEmail(dest); $('#ac-code').value=''; $('#ac-otp').style.display='block'; $('#ac-code').focus();
+    msg('Code sent. It is valid for 5 minutes.',true);
   });
-  $('#mr-clear').addEventListener('click',()=>{ MAIL_UI.pT=new Set(); MAIL_UI.pS=new Set(); paintRecips(); });
-  $('#mr-low').addEventListener('click',()=>{
-    MAIL_UI.pS=new Set(mailStudents().filter(okMail).filter(s=>{ try{ const o=overallStatsForStudent(s.id); return o.held && o.pct<75; }catch(e){ return false; } }).map(s=>s.id));
-    paintRecips();
+  $('#ac-resend').addEventListener('click', async ()=>{
+    if(!pending) return;
+    const dest=(pending.email!==A.email || !A.email) ? pending.email : A.email;
+    try{ await otpIssue('acct', dest, 'acct'); msg('A new code was sent.',true); }catch(e){ msg('Could not resend ('+e.message+').'); }
   });
-  $('#mr-class').addEventListener('change',e=>{ MAIL_UI.classId=e.target.value; paintRecips(); });
-  $('#mr-q').addEventListener('input',e=>{ MAIL_UI.q=e.target.value; paintRecips(); });
-
-  const refreshLog=async()=>{ await loadMailLog(); const el=$('#mr-log'); if(el) el.innerHTML=mailLogHtml(); };
-  $('#mr-refresh').addEventListener('click',refreshLog);
-  $('#mr-send').addEventListener('click',async()=>{
-    if(MAIL_UI.busy) return;
-    const st=$('#mr-status'), setMsg=(t,bad)=>{ MAIL_UI.status=t; MAIL_UI.statusBad=!!bad; st.textContent=t; st.className='form-msg '+(bad?'err':'ok'); };
-    const people=[];
-    if(MAIL_UI.aud!=='students') DB.teachers.filter(t=>MAIL_UI.pT.has(t.id)&&okMail(t)).forEach(t=>people.push({p:t,role:'teacher'}));
-    if(MAIL_UI.aud!=='teachers') DB.students.filter(s=>MAIL_UI.pS.has(s.id)&&okMail(s)).forEach(s=>people.push({p:s,role:'student'}));
-    if(!people.length){ setMsg('Pick at least one recipient who has an email.',true); return; }
-    const type=MAIL_UI.type; let subject='', body='';
-    if(type==='custom'){ subject=$('#mr-subject').value.trim(); body=$('#mr-body').value.trim(); if(!subject||!body){ setMsg('Enter both a subject and a message.',true); return; } }
-    if(!confirm('Send '+people.length+' email'+(people.length===1?'':'s')+' now?')) return;
-    MAIL_UI.busy=true; setMsg('Sending…');
-    let sent=0, skipped=0, failed=0;
-    const d=new Date(); if(type==='tomorrow') d.setDate(d.getDate()+1);
-    const dayName=JS_DAY_TO_NAME[d.getDay()], dayLabel=d.toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'short'});
-    for(const {p,role} of people){
-      let m=null;
-      if(type==='custom') m={subject, text:body, html:mailWrap(subject,'<p>Hello '+escapeHtml(p.name)+',</p><p>'+escapeHtml(body).replace(/\n/g,'<br>')+'</p>')};
-      else if(type==='attendance'){ if(role==='student'){ try{ m=attendanceMail(p); }catch(e){ m=null; } } }
-      else { const lines=role==='teacher'?classLinesFor(p,dayName):classLinesForClass(p.classId,dayName); if(lines.length) m=scheduleMail(p,dayLabel,lines); }
-      if(!m){ skipped++; continue; }
-      try{ await queueMail(uid('man_'),{to:normEmail(p.email),subject:m.subject,text:m.text,html:m.html,kind:type,by:'manual',teacherId:role==='teacher'?p.id:''},false); sent++; }
-      catch(e){ failed++; }
+  $('#ac-cancel').addEventListener('click', ()=>{ closeOtp(); msg(''); });
+  $('#ac-confirm').addEventListener('click', async ()=>{
+    if(!pending) return;
+    if(lockLeft()>0){ msg('Too many wrong attempts. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
+    const r=await otpCheck('acct', $('#ac-code').value);
+    if(r.s==='expired'){ closeOtp(); msg('That code has expired. Start again.'); return; }
+    if(r.s==='locked'){ failLogin(); closeOtp(); msg('Too many wrong codes. Start again.'); return; }
+    if(r.s==='bad'){ failLogin(); msg('Incorrect code. '+r.left+' attempt'+(r.left===1?'':'s')+' left.'); $('#ac-code').value=''; return; }
+    const oldEmail=A.email, changedPw=!!pending.h, changedEmail=pending.email!==A.email;
+    setSetting('adminAcct',{user:A.user, email:pending.email, h:pending.h||A.h});
+    if(oldEmail && validEmail(oldEmail)){      // security notice to the previous address
+      const what=[changedEmail?'the admin e-mail':'', changedPw?'the admin password':''].filter(Boolean).join(' and ');
+      queueMail(uid('sec_'),{to:oldEmail,subject:'Admin details changed',text:'Hello,\n\n'+what+' for the admin portal was just changed. If this was not you, act immediately.\n\n'+collegeName(),
+        html:mailWrap('Admin details changed','<p>'+escapeHtml(what)+' for the admin portal was just changed.</p><p>If this was not you, act immediately.</p>'),kind:'security',by:'system'},false).catch(()=>{});
     }
-    MAIL_UI.busy=false;
-    const parts=[sent+' queued']; if(skipped) parts.push(skipped+' skipped (nothing to send for them)'); if(failed) parts.push(failed+' failed — check the database rules');
-    setMsg(parts.join(' · ')+'.', failed>0 && !sent);
-    refreshLog();
+    pending=null; renderAdminAccount(); const m=$('#ac-msg'); m.textContent='Admin details updated.'; m.className='form-msg ok';
   });
-  if(!MAIL_UI.log.length) refreshLog();
+  $('#mr-refresh').addEventListener('click', async()=>{ await loadMailLog(); const el=$('#mr-log'); if(el) el.innerHTML=mailLogHtml(); });
+  if(!MAIL_UI.log.length) loadMailLog().then(()=>{ const el=$('#mr-log'); if(el) el.innerHTML=mailLogHtml(); });
 }
 
 /* ============================= INIT ============================= */
