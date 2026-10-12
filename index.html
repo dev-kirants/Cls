@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.webmanifest"/>
 <link rel="icon" href="icons/icon-192.png"/>
 <link rel="apple-touch-icon" href="icons/icon-192.png"/>
-<title> Sakshi-AMS </title>
+<title>Attendance Management System</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -363,7 +363,7 @@
 
 
 <header id="topbar" class="topbar">
-  <div class="brand">Sakshi-AMS</div>
+  <div class="brand">Attendance Management System</div>
   <div class="who-wrap">
     <span id="topbar-who" class="who"></span>
     <button id="logout-btn" class="btn btn-ghost btn-sm">Sign out</button>
@@ -373,7 +373,7 @@
 <section id="view-login" class="view active">
   <div class="login-wrap">
     <div class="login-hero">
-      <div class="eyebrow">Sakshi-AMS</div>
+      <div class="eyebrow">Attendance Management System</div>
         <div class="ledger-mark">
         <div class="ledger-row"><span class="ledger-dot done"></span><span class="ledger-line"></span></div>
         <div class="ledger-row"><span class="ledger-dot done"></span><span class="ledger-line"></span></div>
@@ -1237,7 +1237,7 @@ function applyPeriodConfig(){
   list.forEach((p,i)=>{ PERIODS.push(i+1); PERIOD_TIMES[i+1] = p.s+' – '+p.e; });
 }
 function applyBrand(){
-  const b = getSetting('brand', {}), nm = escapeHtml(b.name || '');
+  const b = getSetting('brand', {}), nm = escapeHtml(b.name || 'Attendance Ledger');
   const logo = b.logo ? '<img src="'+b.logo+'" class="brand-logo" alt="">' : '';
   $('#topbar .brand').innerHTML = logo+'<span>'+nm+'</span>';
   const hero = $('.login-hero'); if(!hero) return;
@@ -1438,7 +1438,7 @@ function resetAdminLoginUi(clearPass){
   q('admin-otp').value=''; if(clearPass) q('admin-pass').value='';
 }
 async function finishAdminLogin(needEmail){
-  okLogin(); migrateTeacherPasswords();
+  okLogin(); migrateTeacherPasswords(); purgeOldMail();
   state.role='admin'; state.adminTab = needEmail ? 'account' : 'overview';
   $('#admin-user').value=''; $('#admin-pass').value='';
   resetAdminLoginUi(true);
@@ -1494,7 +1494,7 @@ async function fpOffer(){
     if(!confirm('Use your fingerprint to sign in next time on this device?')){ no.push(id); try{ localStorage.setItem(FP_NO, JSON.stringify(no)); }catch(e){} return; }
     const cred = await navigator.credentials.create({publicKey:{
       challenge:crypto.getRandomValues(new Uint8Array(32)),
-      rp:{name:'Sakshi-AMS'},
+      rp:{name:'Attendance Ledger'},
       user:{id:new TextEncoder().encode(id), name:w.name, displayName:w.name},
       pubKeyCredParams:[{type:'public-key',alg:-7}],
       authenticatorSelection:{authenticatorAttachment:'platform', userVerification:'required', residentKey:'discouraged'},
@@ -2230,7 +2230,7 @@ function renderTeacherReports(teacher){
   $('#print-report-btn').addEventListener('click', ()=>{
     const {subject, month, rows} = subjectMonthMatrix(state.reportSubject, state.reportMonth);
     const cls = DB.classes.find(c=>c.id===subject.classId);
-    const html2 = '<h2 style="font-family:\'Bricolage Grotesque\',sans-serif;margin-bottom:2px;">Sakshi-AMS</h2>'
+    const html2 = '<h2 style="font-family:\'Bricolage Grotesque\',sans-serif;margin-bottom:2px;">Attendance Ledger College</h2>'
       + '<div style="color:#555;margin-bottom:16px;">'+cls.course+' · Semester '+cls.semester+' · Section '+cls.section+'</div>'
       + '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
       + '<tr><td><strong>Subject:</strong> '+subject.name+' ('+subject.code+')</td><td><strong>Teacher:</strong> '+escapeHtml(teacher.name)+'</td></tr>'
@@ -3078,7 +3078,7 @@ function printAdminAttendance(){
   const held = recs.length;
   const present = recs.filter(r=>r.status==='P').length;
   const pct = held ? Math.round((present/held)*1000)/10 : 0;
-  const html = '<h2 style="font-family:\'Bricolage Grotesque\',sans-serif;margin-bottom:2px;">Sakshi-AMS</h2>'
+  const html = '<h2 style="font-family:\'Bricolage Grotesque\',sans-serif;margin-bottom:2px;">Attendance Ledger College</h2>'
     + '<div style="color:#555;margin-bottom:16px;">Administrator report · Generated '+new Date().toDateString()+'</div>'
     + '<div style="margin-bottom:12px;">'+held+' records · '+pct+'% present</div>'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
@@ -3190,14 +3190,14 @@ function clsLabel(c){ return c ? c.course+' S'+c.semester+'-'+c.section : '—';
 /* ============================= E-MAIL (attendance confirmations + admin login codes) ============================= */
 /* The app queues each email as a document in the Firestore "mail" collection. The Firebase extension
    "Trigger Email from Firestore" (see the setup card on Admin > Admin Account) actually delivers it by SMTP. */
-function collegeName(){ return (getSetting('brand',{}).name||'').trim() || 'Sakshi-AMS'; }
+function collegeName(){ return (getSetting('brand',{}).name||'').trim() || 'Attendance Ledger'; }
 function mailFields(m){
   const S=v=>({stringValue:String(v)});
   return {
     to:S(m.to),
     message:{mapValue:{fields:{subject:S(m.subject), text:S(m.text), html:S(m.html)}}},
     kind:S(m.kind), by:S(m.by), teacherId:S(m.teacherId||''), createdAt:{integerValue:String(Date.now())},
-    expireAt:{timestampValue:new Date(Date.now()+(m.kind==='otp'?1:30)*86400000).toISOString()}   // Firestore TTL policy on 'expireAt' auto-deletes old mails
+    expireAt:{timestampValue:new Date(Date.now()+(m.kind==='otp'?1:30)*86400000).toISOString()}   // optional: a Firestore TTL policy could use this (needs the paid plan); the app cleans up old mails itself
   };
 }
 async function queueMail(id, m, once){
@@ -3276,6 +3276,23 @@ function mailLogHtml(){
       const s=m.state==='SUCCESS'?['success','Delivered']:m.state==='ERROR'?['danger','Failed']:['warning','Queued'];
       return '<tr><td>'+(m.createdAt?escapeHtml(new Date(m.createdAt).toLocaleString()):DASH)+'</td><td>'+escapeHtml(m.to)+'</td><td>'+escapeHtml(m.subject)+'</td><td>'+(m.by==='system'?'Login / security':'Attendance')+'</td><td><span class="badge badge-'+s[0]+'" '+(m.error?'title="'+escapeHtml(m.error)+'"':'')+'>'+s[1]+'</span></td></tr>';
     }).join('')+'</tbody></table></div>';
+}
+
+/* Housekeeping: deletes mails older than 30 days (replaces a Firestore TTL policy, which needs the paid plan).
+   Runs from the admin login, at most once a day per browser, in small batches so it costs very few reads. */
+async function purgeOldMail(){
+  if(!BACKEND_ON()) return;
+  try{
+    if(Date.now()-Number(localStorage.getItem('atl_mail_purge')||0) < 20*3600000) return;
+    const c=getSupabaseCfg(), cutoff=Date.now()-30*86400000;
+    for(let round=0; round<5; round++){
+      const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}],
+        where:{fieldFilter:{field:{fieldPath:'createdAt'},op:'LESS_THAN',value:{integerValue:String(cutoff)}}}, limit:300}});
+      const docs=items.filter(i=>i.document);
+      if(docs.length) await fsPost(c,':commit',{writes:docs.map(i=>({delete:i.document.name}))});
+      if(docs.length<300){ localStorage.setItem('atl_mail_purge',String(Date.now())); return; }   // more left? the next admin login continues
+    }
+  }catch(e){}
 }
 
 /* ============================= ADMIN > MAIL REMINDER ============================= */
