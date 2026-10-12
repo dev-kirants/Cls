@@ -544,10 +544,12 @@ function fsWrite(c, table, row){
   const fields = {};
   const r = prepRow(table, row);
   Object.keys(r).forEach(k=>{ if(r[k] !== undefined) fields[k] = fsEnc(r[k]); });
+  if(table === 'attendance') fields.ts = {integerValue:String(Date.now())};   // lets other devices fetch only changed rows
   return {update:{name: fsRoot(c)+'/'+table+'/'+r.id, fields}};
 }
 async function apiGetAll(){
   if(!BACKEND_ON()) return {ok:false};
+  const t0=Date.now();
   const c = getSupabaseCfg();
   try{
     const results = await Promise.all(SYNC_TABLES.map(t=>
@@ -563,10 +565,56 @@ async function apiGetAll(){
     ));
     const data = {};
     SYNC_TABLES.forEach((t,i)=> data[t] = results[i]);
-    return {ok:true, data};
+    ATT_CURSOR=t0; return {ok:true, data};
   }catch(err){ console.error('[sync] load failed', err); return {ok:false, error:err.message}; }
 }
-const LAST_REV={}; let REV_SEEN=null, POLL_BUSY=false, PENDING=false;
+const LAST_REV={}; let REV_SEEN=null, POLL_BUSY=false, PENDING=false, ATT_CURSOR=0, LAST_POLL=0;
+function decDoc(d){ const o={}; const f=d.fields||{}; Object.keys(f).forEach(k=>{ o[k]=fsDec(k,f[k]); }); if(o.id===undefined) o.id=d.name.split('/').pop(); return o; }
+async function fetchAttendanceFull(c){ const t0=Date.now(); const rows=await fetchTable(c,'attendance'); ATT_CURSOR=t0; return rows; }
+/* Reads ONLY attendance rows written since the last sync (2 min overlap covers clock differences). */
+async function fetchAttendanceDelta(c){
+  const t0=Date.now();
+  const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'attendance'}],
+    where:{fieldFilter:{field:{fieldPath:'ts'},op:'GREATER_THAN_OR_EQUAL',value:{integerValue:String(Math.max(0,ATT_CURSOR-120000))}}}}});
+  const map=new Map(DB.attendance.map(r=>[r.id,r]));
+  items.filter(i=>i.document).forEach(i=>{ const o=decDoc(i.document); map.set(o.id,o); });
+  ATT_CURSOR=t0;
+  return Array.from(map.values());
+}
+/* ---- local cache (IndexedDB): page loads re-read only what changed ---- */
+function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('atl_cache',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function snapLoad(){ try{ const d=await idb(); return await new Promise(res=>{ const q=d.transaction('kv').objectStore('kv').get('snap'); q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null); }); }catch(e){ return null; } }
+let _snapT;
+function saveSnap(){
+  clearTimeout(_snapT);
+  _snapT=setTimeout(async()=>{ try{
+    const c=getSupabaseCfg(), data={}, rv=Object.assign({},REV_SEEN||{});
+    Object.keys(LAST_REV).forEach(t=>{ if(t!=='attendance') delete rv[t]; });      // tables this device wrote: re-read next time to be safe
+    SYNC_TABLES.forEach(t=>{ data[t]= t==='sessions' ? DB.sessions.map(x=>Object.assign({},x,{files:(x.files||[]).map(f=>({name:f.name,size:f.size,fid:f.fid||'',chunks:f.chunks||0}))})) : DB[t]; });
+    const d=await idb(); d.transaction('kv','readwrite').objectStore('kv').put({cfg:c.url, rev:rv, attCursor:ATT_CURSOR, data},'snap');
+  }catch(e){} },1500);
+}
+async function loadAll(){
+  const c=getSupabaseCfg(), rev=await getRev();
+  if(!rev){ const res=await apiGetAll(); if(res&&res.ok) SYNC_TABLES.forEach(t=>{ DB[t]=res.data[t]||[]; }); return; }
+  REV_SEEN=rev;
+  const sn=await snapLoad(), same=(sn&&sn.cfg===c.url&&sn.data)?sn:null;
+  const delSame=!!same && same.rev.attendance_del===rev.attendance_del;
+  await Promise.all(SYNC_TABLES.map(async t=>{
+    if(t==='attendance'){
+      if(same && delSame && Array.isArray(same.data.attendance) && same.attCursor>0){ DB.attendance=same.data.attendance; ATT_CURSOR=same.attCursor; DB.attendance=await fetchAttendanceDelta(c); }
+      else DB.attendance=await fetchAttendanceFull(c);
+      return;
+    }
+    if(same && rev[t]!==undefined && same.rev[t]===rev[t] && Array.isArray(same.data[t])){ DB[t]=same.data[t]; return; }
+    DB[t]=await fetchTable(c,t);
+  }));
+  saveSnap();
+}
+function schedulePoll(){
+  const idle=Date.now()-LAST_ACT;
+  setTimeout(async()=>{ try{ await pollRev(); }catch(e){} schedulePoll(); }, idle>180000?120000:(state.role==='student'?60000:30000));
+}
 function revWrite(c, tables){
   tables=[].concat(tables); const ts=Date.now(), fields={};
   tables.forEach(t=>{ LAST_REV[t]=ts; fields[t]={integerValue:String(ts)}; });
@@ -602,7 +650,7 @@ async function syncBatch(table, ups, dels){
   if(!BACKEND_ON()) return true;
   const c=getSupabaseCfg();
   const w=(ups||[]).map(r=>fsWrite(c,table,r)).concat((dels||[]).map(id=>({delete:fsRoot(c)+'/'+table+'/'+id})));
-  return pushWrites(w,[table]);
+  return pushWrites(w,(table==='attendance'&&(dels||[]).length)?[table,'attendance_del']:[table]);
 }
 /* Several tables in ONE request, e.g. timetable + period settings together. */
 async function syncMulti(parts){
@@ -654,15 +702,19 @@ function liveRefresh(){
 }
 async function pollRev(){
   if(!BACKEND_ON()||document.hidden||POLL_BUSY||!state.role) return;
+  LAST_POLL=Date.now();
   if(PENDING) liveRefresh();
   POLL_BUSY=true;
   try{
     const rev=await getRev(); if(!rev) return;
     const old=REV_SEEN||{}; const changed=Object.keys(rev).filter(k=>SYNC_TABLES.includes(k)&&rev[k]!==old[k]&&rev[k]!==LAST_REV[k]);
-    REV_SEEN=rev; if(!changed.length) return;
+    const attDel=rev.attendance_del!==old.attendance_del && rev.attendance_del!==LAST_REV.attendance_del;
+    REV_SEEN=rev; if(!changed.length && !attDel) return;
+    if(attDel && !changed.includes('attendance')) changed.push('attendance');
     const c=getSupabaseCfg();
-    const res=await Promise.all(changed.map(t=>fetchTable(c,t)));
+    const res=await Promise.all(changed.map(t=>t==='attendance' ? (attDel?fetchAttendanceFull(c):fetchAttendanceDelta(c)) : fetchTable(c,t)));
     changed.forEach((t,i)=>{ DB[t]=res[i]; });
+    saveSnap();
     if(changed.includes('settings')){
       applyPeriodConfig(); applyBrand();
       const ms=state.role==='teacher' && state.teacherTab==='mark' ? $('#mark-period') : null;
@@ -972,15 +1024,17 @@ function guessMime(name){
   return ({pdf:'application/pdf', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif', webp:'image/webp', svg:'image/svg+xml',
     mp4:'video/mp4', webm:'video/webm', mp3:'audio/mpeg', wav:'audio/wav', txt:'text/plain', csv:'text/csv'})[fileExt(name)] || '';
 }
+const FILE_CACHE = new Map();
 async function fetchSessionFileBlob(f){
   if(f.dataUrl) return dataUrlToBlob(f.dataUrl, f.name);
+  if(FILE_CACHE.has(f.fid)) return FILE_CACHE.get(f.fid);
   const c = getSupabaseCfg(), pieces = [];
   for(let i=0;i<f.chunks;i++){
     const r = await fetch('https://firestore.googleapis.com/v1/'+fsRoot(c)+'/sessionfiles/'+f.fid+'_'+i+'?key='+encodeURIComponent(c.key));
     if(!r.ok) throw new Error('HTTP '+r.status);
     pieces.push(((await r.json()).fields||{}).data.stringValue);
   }
-  return dataUrlToBlob(pieces.join(''), f.name);
+  const blob = dataUrlToBlob(pieces.join(''), f.name); FILE_CACHE.set(f.fid, blob); return blob;
 }
 function fileKind(name, mime){
   const e = fileExt(name);
@@ -2525,7 +2579,7 @@ function renderAdminSettings(){
   $('#wipe-all').addEventListener('click', async ()=>{
     if(prompt('This deletes ALL data permanently. Type DELETE to confirm.')!=='DELETE') return;
     const c=getSupabaseCfg(), w=[]; SYNC_TABLES.forEach(t=>{ DB[t].forEach(r=>w.push({delete:fsRoot(c)+'/'+t+'/'+r.id})); });
-    if(BACKEND_ON() && !(await pushWrites(w,SYNC_TABLES))) return;
+    if(BACKEND_ON() && !(await pushWrites(w,SYNC_TABLES.concat(['attendance_del'])))) return;
     SYNC_TABLES.forEach(t=>{ DB[t]=[]; });
     alert('All data deleted.'); renderAdminSettings();
   });
@@ -3142,7 +3196,8 @@ function mailFields(m){
   return {
     to:S(m.to),
     message:{mapValue:{fields:{subject:S(m.subject), text:S(m.text), html:S(m.html)}}},
-    kind:S(m.kind), by:S(m.by), teacherId:S(m.teacherId||''), createdAt:{integerValue:String(Date.now())}
+    kind:S(m.kind), by:S(m.by), teacherId:S(m.teacherId||''), createdAt:{integerValue:String(Date.now())},
+    expireAt:{timestampValue:new Date(Date.now()+(m.kind==='otp'?1:30)*86400000).toISOString()}   // Firestore TTL policy on 'expireAt' auto-deletes old mails
   };
 }
 async function queueMail(id, m, once){
@@ -3308,7 +3363,7 @@ async function mrLoad(){
   if(!BACKEND_ON()){ MR.log=[]; MR.msg='Connect the database in Settings to send and see mails.'; return; }
   try{
     const c=getSupabaseCfg();
-    const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:300}});
+    const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:100}});
     MR.log=items.filter(i=>i.document).map(i=>{ const m=decMailDoc(i.document); m.id=i.document.name.split('/').pop();
       const k=i.document.fields&&i.document.fields.kind; m.kind=k&&k.stringValue?k.stringValue:''; return m; })
       .filter(m=>m.kind.indexOf('reminder-')===0);
@@ -3501,10 +3556,8 @@ function renderAdminAccount(){
 function initApp(){
   const ready = ()=>{ applyPeriodConfig(); applyBrand(); populateLoginSelects(); bindLoginEvents(); };
   if(!BACKEND_ON()){ ready(); return; }          // no database configured: start empty
-  getRev().then(r=>{ REV_SEEN=r||{}; }); setInterval(pollRev,5000); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pollRev(); });
-  apiGetAll().then(res=>{
-    if(res && res.ok) SYNC_TABLES.forEach(t=>{ DB[t] = res.data[t] || []; });
-  }).catch(err=>console.error(err)).finally(ready);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && Date.now()-LAST_POLL>20000) pollRev(); });
+  loadAll().catch(err=>console.error(err)).finally(()=>{ ready(); schedulePoll(); });
 }
 initApp();
 </script>
