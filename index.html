@@ -5,7 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://firestore.googleapis.com; object-src 'none'; manifest-src 'self'; worker-src 'self'; frame-src blob:; media-src blob:; base-uri 'none'; form-action 'none'"/>
 <meta name="referrer" content="no-referrer"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<meta name="theme-color" content="#083F4C"/>
+<meta name="theme-color" content="#2B2380"/>
 <meta name="mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-title" content="Attendance"/>
@@ -20,22 +20,22 @@
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
 <style>
   :root{
-    --ink:#0B2530;
-    --paper:#EAF1F2;
+    --ink:#1F1B3A;
+    --paper:#F7F3EA;
     --surface:#FFFFFF;
-    --line:#CCDADD;
-    --muted:#5C7077;
-    --primary:#0E5A6B;
-    --primary-dark:#083F4C;
-    --primary-tint:#DDEFF1;
-    --gold:#D4962A;
+    --line:#E3DCCB;
+    --muted:#6B6680;
+    --primary:#4338A8;
+    --primary-dark:#2B2380;
+    --primary-tint:#E9E7F8;
+    --gold:#E0A030;
     --success:#2F6F4E;
     --success-tint:#E4EFE8;
     --warning:#B8860B;
     --warning-tint:#F7EDD6;
     --danger:#A33636;
     --danger-tint:#F5E1DF;
-    --radius:4px;
+    --radius:12px;
     --font-serif:'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
     --font-sans:'DM Sans', system-ui, -apple-system, sans-serif;
   }
@@ -55,11 +55,11 @@
   @media (max-width:860px){ .login-wrap{grid-template-columns:1fr;} }
   .login-hero{background:var(--ink); color:var(--paper); padding:64px 56px; display:flex; flex-direction:column; justify-content:center; gap:22px;}
   .login-hero .eyebrow{color:var(--gold); font-weight:600; font-size:0.85rem; letter-spacing:0.02em;}
-  .login-hero h1{font-size:clamp(2.1rem,4vw,3.2rem); line-height:1.12; font-weight:600; max-width:11ch; color:#EAF6F7;}
+  .login-hero h1{font-size:clamp(2.1rem,4vw,3.2rem); line-height:1.12; font-weight:600; max-width:11ch; color:#EFEDFB;}
   .login-hero p{color:#CFE3E6; max-width:42ch; line-height:1.65; font-size:1rem;}
   .ledger-mark{display:flex; flex-direction:column; gap:14px; margin-top:8px;}
   .ledger-row{display:flex; align-items:center; gap:12px;}
-  .ledger-dot{width:13px; height:13px; border-radius:50%; border:2px solid #4B7C86; flex-shrink:0;}
+  .ledger-dot{width:13px; height:13px; border-radius:50%; border:2px solid #7A74B8; flex-shrink:0;}
   .ledger-dot.done{background:var(--gold); border-color:var(--gold);}
   .ledger-line{height:2px; background:rgba(255,255,255,0.16); flex:1;}
   .ledger-line.short{width:55%; flex:none;}
@@ -240,12 +240,12 @@
   .status-pill{display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:100px; font-size:0.8rem; font-weight:600;}
   .status-connected{background:var(--success-tint); color:var(--success);}
   .status-disconnected{background:var(--danger-tint); color:var(--danger);}
-  .sql-box{background:var(--ink); color:#DCEBEE; padding:16px; border-radius:var(--radius); font-family:monospace; font-size:0.76rem; white-space:pre; overflow-x:auto; max-height:320px; overflow-y:auto;}
+  .sql-box{background:var(--ink); color:#E4E1F5; padding:16px; border-radius:var(--radius); font-family:monospace; font-size:0.76rem; white-space:pre; overflow-x:auto; max-height:320px; overflow-y:auto;}
 
   /* ---------- Print ---------- */
 
   /* ---------- File viewer popup ---------- */
-  .fv-backdrop{position:fixed; inset:0; background:rgba(11,37,48,.62); display:none; align-items:center; justify-content:center; padding:20px; z-index:1000;}
+  .fv-backdrop{position:fixed; inset:0; background:rgba(31,27,58,.62); display:none; align-items:center; justify-content:center; padding:20px; z-index:1000;}
   .fv-backdrop.open{display:flex;}
   .fv-modal{background:var(--surface); border-radius:var(--radius); width:min(960px,100%); height:min(86vh,760px); display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.35); overflow:hidden;}
   .fv-head{display:flex; align-items:center; gap:12px; padding:12px 16px; border-bottom:1px solid var(--line);}
@@ -268,9 +268,9 @@
 
   /* ---------- Reminder toast ---------- */
   #toast-host{position:fixed; right:18px; bottom:18px; display:flex; flex-direction:column; gap:10px; z-index:1100; max-width:min(360px,calc(100vw - 36px));}
-  .toast{background:var(--ink); color:#EAF6F7; border-left:4px solid var(--gold); border-radius:var(--radius); padding:12px 14px; font-size:.86rem; line-height:1.45; box-shadow:0 10px 30px rgba(0,0,0,.3);}
+  .toast{background:var(--ink); color:#EFEDFB; border-left:4px solid var(--gold); border-radius:var(--radius); padding:12px 14px; font-size:.86rem; line-height:1.45; box-shadow:0 10px 30px rgba(0,0,0,.3);}
   .toast b{display:block; font-family:var(--font-serif); margin-bottom:2px;}
-  .toast button{margin-top:8px; background:transparent; border:1px solid #4B7C86; color:#EAF6F7; border-radius:var(--radius); padding:3px 10px; cursor:pointer; font-size:.75rem;}
+  .toast button{margin-top:8px; background:transparent; border:1px solid #7A74B8; color:#EFEDFB; border-radius:var(--radius); padding:3px 10px; cursor:pointer; font-size:.75rem;}
   .file-chip.file-rm{padding:5px 9px; color:var(--danger); border-color:var(--danger); background:var(--danger-tint); line-height:1;}
   .file-chip.file-rm:hover{background:var(--danger); color:#fff;}
   .btn-danger{background:transparent; border-color:var(--danger); color:var(--danger);}
@@ -294,7 +294,7 @@
 
   :root{--radius:12px;}
   .card,.stat-card{box-shadow:0 6px 24px rgba(8,63,76,.08);}
-  .login-hero{background:linear-gradient(150deg,#083F4C,#0E5A6B 55%,#D4962A); color:#fff;} .login-hero h1,.login-hero p,.login-hero .eyebrow{color:#fff;}
+  .login-hero{background:linear-gradient(150deg,#2B2380,#4338A8 55%,#D4962A); color:#fff;} .login-hero h1,.login-hero p,.login-hero .eyebrow{color:#fff;}
   .brand-logo{height:60px; max-width:300px; object-fit:contain; background:#f8f5f547; border-radius:10px; padding:4px; margin-right:10px; vertical-align:middle;} .topbar .brand-logo{height:34px;}
   .brand-name{font-family:var(--font-serif); font-size:1.6rem; margin:10px 0 2px; color:#fff;} .brand-tag{color:#F6DFA8; font-weight:600;} .brand-details{color:#fff; opacity:.9; font-size:.9rem;}
   .day-chips{display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 16px;} .day-chip{border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 18px; font-weight:600; cursor:pointer;} .day-chip.on{background:var(--primary); color:#fff; border-color:var(--primary);}
@@ -314,34 +314,41 @@
   /* ================= New theme: deep teal + amber ================= */
   :root{--radius:14px;}
   h1,h2,h3{letter-spacing:-.015em;}
-  body{background:radial-gradient(900px 520px at 100% -8%, rgba(14,90,107,.13), transparent 62%), radial-gradient(800px 480px at -8% 108%, rgba(212,150,42,.12), transparent 60%), var(--paper); background-attachment:fixed;}
+  body{background:radial-gradient(900px 520px at 100% -8%, rgba(67,56,168,.13), transparent 62%), radial-gradient(800px 480px at -8% 108%, rgba(212,150,42,.12), transparent 60%), var(--paper); background-attachment:fixed;}
   .login-hero{position:relative; overflow:hidden; background:radial-gradient(520px 360px at 85% 8%, rgba(212,150,42,.30), transparent 65%), linear-gradient(158deg,#06242E 0%,#0A4654 52%,#13808A 100%);}
   .login-hero::before{content:''; position:absolute; inset:0; background:repeating-linear-gradient(0deg, rgba(255,255,255,.055) 0 1px, transparent 1px 44px); pointer-events:none;}
   .login-hero > *{position:relative;}
   .login-card{box-shadow:0 18px 50px rgba(8,63,76,.14);}
-  .topbar{background:rgba(255,255,255,.86); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border-bottom-color:rgba(14,90,107,.14);}
+  .topbar{background:rgba(255,255,255,.86); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); border-bottom-color:rgba(67,56,168,.14);}
   .sidebar{background:linear-gradient(180deg,#0B3340 0%,#072630 100%); border-right:none; border-bottom:none;}
   .side-title{color:#FFFFFF;} .side-sub{color:#8FB5BC;}
   .sidebar-link{color:#B7D0D5;}
   .sidebar-link:hover{background:rgba(255,255,255,.08); color:#FFFFFF;}
   .sidebar-link.active{background:rgba(255,255,255,.14); color:#FFFFFF; box-shadow:inset 3px 0 0 var(--gold);}
   .side-group{color:#E8BC6A; border-top-color:rgba(255,255,255,.14);}
-  .card,.stat-card,.session-card,.holiday-row{border-color:rgba(14,90,107,.14);}
+  .card,.stat-card,.session-card,.holiday-row{border-color:rgba(67,56,168,.14);}
   .card,.stat-card{box-shadow:0 8px 28px rgba(8,63,76,.08);}
-  .btn-primary{background:linear-gradient(180deg,#127084,#0E5A6B); box-shadow:0 2px 8px rgba(14,90,107,.28);}
-  .btn-primary:hover{background:linear-gradient(180deg,#0E5A6B,#083F4C);}
-  .btn-ghost:hover{background:#E1EEF0;}
+  .btn-primary{background:linear-gradient(180deg,#127084,#4338A8); box-shadow:0 2px 8px rgba(67,56,168,.28);}
+  .btn-primary:hover{background:linear-gradient(180deg,#4338A8,#2B2380);}
+  .btn-ghost:hover{background:#E9E7F8;}
   .table th{border-bottom-color:var(--primary);}
-  .table tr:hover td{background:#EFF6F7;}
+  .table tr:hover td{background:#F2F0FB;}
   .class-btn:hover{box-shadow:0 10px 26px rgba(8,63,76,.14);}
   .toast{border-left-color:var(--gold);}
   .kpi{border-left-color:var(--primary);}
-  .trend-bar{background:linear-gradient(180deg,#17808A,#0E5A6B);}
+  .trend-bar{background:linear-gradient(180deg,#17808A,#4338A8);}
   .fp-box{margin-top:16px;}
   .fp-or{display:flex; align-items:center; gap:10px; color:var(--muted); font-size:.78rem; margin-bottom:12px;}
   .fp-or::before,.fp-or::after{content:''; flex:1; height:1px; background:var(--line);}
   #fp-btn svg{flex-shrink:0;}
   .fp-forget{display:block; margin:10px auto 0; background:none; border:none; color:var(--muted); font-size:.76rem; text-decoration:underline; cursor:pointer;}
+
+  /* ---- new ambience: warm ivory, deep indigo, saffron accents ---- */
+  body{background:radial-gradient(1200px 500px at 85% -10%, rgba(224,160,48,.16), transparent 60%),radial-gradient(900px 500px at -10% 0%, rgba(67,56,168,.12), transparent 55%),var(--paper); background-attachment:fixed;}
+  .card,.stat-card{box-shadow:0 1px 2px rgba(31,27,58,.06),0 8px 24px -12px rgba(43,35,128,.18); border-color:var(--line);}
+  .topbar{backdrop-filter:blur(8px);}
+  .btn-primary,button.primary{background:linear-gradient(135deg,var(--primary),var(--primary-dark)); border-color:var(--primary-dark);}
+  ::selection{background:var(--gold); color:#1F1B3A;}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
@@ -495,6 +502,15 @@ async function migrateTeacherPasswords(){
    Web API key into DEFAULT_BACKEND below so every teacher's device connects automatically.
    In this app's settings: "url" = Firebase Project ID, "key" = Firebase Web API key. */
 const DEFAULT_BACKEND = { url:'cls-atds', key:'AIzaSyBHLtqo-OtavzjQty9YBLyy7n80AOqEjyo' };
+/* READ-SAVING SETTINGS ------------------------------------------------------------
+   ATT_FROM: only attendance on/after this date is downloaded (YYYY-MM-DD). Set it to the start of the
+   current term/year, e.g. '2026-06-01'. Leave '' to load everything (costs many more reads). */
+const ATT_FROM = '2026-09-01';
+function attFullQuery(){
+  const q={from:[{collectionId:'attendance'}]};
+  if(ATT_FROM) q.where={fieldFilter:{field:{fieldPath:'date'},op:'GREATER_THAN_OR_EQUAL',value:{stringValue:ATT_FROM}}};
+  return {structuredQuery:q};
+}
 const LS_SUPABASE_KEY = 'attlaw_supabase_cfg_v1';
 
 function getSupabaseCfg(){
@@ -553,7 +569,7 @@ async function apiGetAll(){
   const c = getSupabaseCfg();
   try{
     const results = await Promise.all(SYNC_TABLES.map(t=>
-      fsPost(c, ':runQuery', {structuredQuery:{from:[{collectionId:t}]}}).then(items=>
+      fsPost(c, ':runQuery', t==='attendance' ? attFullQuery() : {structuredQuery:{from:[{collectionId:t}]}}).then(items=>
         items.filter(i=>i.document).map(i=>{
           const o = {};
           const f = i.document.fields || {};
@@ -570,7 +586,7 @@ async function apiGetAll(){
 }
 const LAST_REV={}; let REV_SEEN=null, POLL_BUSY=false, PENDING=false, ATT_CURSOR=0, LAST_POLL=0;
 function decDoc(d){ const o={}; const f=d.fields||{}; Object.keys(f).forEach(k=>{ o[k]=fsDec(k,f[k]); }); if(o.id===undefined) o.id=d.name.split('/').pop(); return o; }
-async function fetchAttendanceFull(c){ const t0=Date.now(); const rows=await fetchTable(c,'attendance'); ATT_CURSOR=t0; return rows; }
+async function fetchAttendanceFull(c){ const t0=Date.now(); const items=await fsPost(c,':runQuery',attFullQuery()); ATT_CURSOR=t0; return items.filter(i=>i.document).map(i=>decDoc(i.document)); }
 /* Reads ONLY attendance rows written since the last sync (2 min overlap covers clock differences). */
 async function fetchAttendanceDelta(c){
   const t0=Date.now();
@@ -585,20 +601,20 @@ async function fetchAttendanceDelta(c){
 function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('atl_cache',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 async function snapLoad(){ try{ const d=await idb(); return await new Promise(res=>{ const q=d.transaction('kv').objectStore('kv').get('snap'); q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null); }); }catch(e){ return null; } }
 let _snapT;
-function saveSnap(){
+function saveSnap(now){
   clearTimeout(_snapT);
   _snapT=setTimeout(async()=>{ try{
     const c=getSupabaseCfg(), data={}, rv=Object.assign({},REV_SEEN||{});
     Object.keys(LAST_REV).forEach(t=>{ if(t!=='attendance') delete rv[t]; });      // tables this device wrote: re-read next time to be safe
     SYNC_TABLES.forEach(t=>{ data[t]= t==='sessions' ? DB.sessions.map(x=>Object.assign({},x,{files:(x.files||[]).map(f=>({name:f.name,size:f.size,fid:f.fid||'',chunks:f.chunks||0}))})) : DB[t]; });
-    const d=await idb(); d.transaction('kv','readwrite').objectStore('kv').put({cfg:c.url, rev:rv, attCursor:ATT_CURSOR, data},'snap');
-  }catch(e){} },1500);
+    const d=await idb(); d.transaction('kv','readwrite').objectStore('kv').put({cfg:c.url+'|'+ATT_FROM, rev:rv, attCursor:ATT_CURSOR, data},'snap');
+  }catch(e){} },now?0:1500);
 }
 async function loadAll(){
   const c=getSupabaseCfg(), rev=await getRev();
   if(!rev){ const res=await apiGetAll(); if(res&&res.ok) SYNC_TABLES.forEach(t=>{ DB[t]=res.data[t]||[]; }); return; }
   REV_SEEN=rev;
-  const sn=await snapLoad(), same=(sn&&sn.cfg===c.url&&sn.data)?sn:null;
+  const sn=await snapLoad(), same=(sn&&sn.cfg===c.url+'|'+ATT_FROM&&sn.data)?sn:null;
   const delSame=!!same && same.rev.attendance_del===rev.attendance_del;
   await Promise.all(SYNC_TABLES.map(async t=>{
     if(t==='attendance'){
@@ -609,11 +625,11 @@ async function loadAll(){
     if(same && rev[t]!==undefined && same.rev[t]===rev[t] && Array.isArray(same.data[t])){ DB[t]=same.data[t]; return; }
     DB[t]=await fetchTable(c,t);
   }));
-  saveSnap();
+  saveSnap(true);
 }
 function schedulePoll(){
   const idle=Date.now()-LAST_ACT;
-  setTimeout(async()=>{ try{ await pollRev(); }catch(e){} schedulePoll(); }, idle>180000?120000:(state.role==='student'?60000:30000));
+  setTimeout(async()=>{ try{ await pollRev(); }catch(e){} schedulePoll(); }, idle>300000?900000:(state.role==='student'?600000:240000));
 }
 function revWrite(c, tables){
   tables=[].concat(tables); const ts=Date.now(), fields={};
@@ -702,6 +718,7 @@ function liveRefresh(){
 }
 async function pollRev(){
   if(!BACKEND_ON()||document.hidden||POLL_BUSY||!state.role) return;
+  if(Date.now()-LAST_ACT>1800000) return;   // idle 30+ min: no reads at all
   LAST_POLL=Date.now();
   if(PENDING) liveRefresh();
   POLL_BUSY=true;
@@ -814,7 +831,7 @@ function overallStatsAll(){
 }
 
 /* ---- clearer visuals: shared helpers ---- */
-const CLR = {good:'#2F6F4E', watch:'#B8860B', bad:'#A33636', brand:'#0E5A6B', gold:'#D4962A', grid:'#DDE7E9'};
+const CLR = {good:'#2F6F4E', watch:'#B8860B', bad:'#A33636', brand:'#4338A8', gold:'#D4962A', grid:'#E6E1D3'};
 function clrFor(p){ return p>=85?CLR.good:(p>=75?CLR.watch:CLR.bad); }
 /* draws a dashed "75% required" guide on Chart.js bar/line charts */
 const targetLine = {id:'targetLine', afterDatasetsDraw(ch, a, o){
@@ -1747,7 +1764,7 @@ function renderStudentDashboard(){
 
   $('#student-content').innerHTML = html;
   if(!window.Chart){ return; }
-  new Chart($('#ch-trend'), {type:'line', data:{labels:trend.map(m=>m.name.slice(0,3)), datasets:[{label:'Attendance %', data:trend.map(m=>m.pct), borderColor:CLR.brand, backgroundColor:'rgba(14,90,107,.12)', fill:true, tension:.3, pointRadius:5, pointBackgroundColor:trend.map(m=>clrFor(m.pct))}]},
+  new Chart($('#ch-trend'), {type:'line', data:{labels:trend.map(m=>m.name.slice(0,3)), datasets:[{label:'Attendance %', data:trend.map(m=>m.pct), borderColor:CLR.brand, backgroundColor:'rgba(67,56,168,.12)', fill:true, tension:.3, pointRadius:5, pointBackgroundColor:trend.map(m=>clrFor(m.pct))}]},
     options:{maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}}, scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%'}, grid:{color:CLR.grid}}, x:{grid:{display:false}}}}, plugins:[targetLine]});
   const subs = overall.subjects, pcs = subs.map(su=>subjectStatsForStudent(student.id, su.id).pct);
   new Chart($('#ch-stu'), {type:'bar', data:{labels:subs.map(su=>su.name), datasets:[{label:'Attendance %', data:pcs, backgroundColor:pcs.map(clrFor), borderRadius:4, barThickness:22}]},
@@ -3153,7 +3170,7 @@ function renderAdminAnalytics(){
   const o = overallStatsAll(), dates = Array.from(new Set(DB.attendance.map(a=>a.date))).sort().slice(-30);
   const pctOn = d=>{ const r = DB.attendance.filter(a=>a.date===d); return r.length ? Math.round(100*r.filter(a=>a.status==='P').length/r.length) : 0; };
   const heat = {}; DB.attendance.forEach(a=>{ const k = JS_DAY_TO_NAME[new Date(a.date+'T00:00:00').getDay()]+'_'+a.period; const h = heat[k] = heat[k] || [0,0]; h[1]++; if(a.status==='P') h[0]++; });
-  const hm = '<table class="hm-table"><tr><th></th>'+PERIODS.map(p=>'<th>P'+p+'</th>').join('')+'</tr>'+WEEKDAYS.map(w=>'<tr><th>'+w+'</th>'+PERIODS.map(p=>{ const h = heat[w+'_'+p]; if(!h) return '<td class="hm" style="background:#E4EDEF;color:#999">–</td>'; const v = Math.round(100*h[0]/h[1]); const bg = v>=85?'#CFE5D8':(v>=75?'#F4E3B5':'#EBC4C0'); const fg = v>=85?CLR.good:(v>=75?'#7a5b06':CLR.bad); return '<td class="hm" style="background:'+bg+';color:'+fg+'">'+v+'%</td>'; }).join('')+'</tr>').join('')+'</table>';
+  const hm = '<table class="hm-table"><tr><th></th>'+PERIODS.map(p=>'<th>P'+p+'</th>').join('')+'</tr>'+WEEKDAYS.map(w=>'<tr><th>'+w+'</th>'+PERIODS.map(p=>{ const h = heat[w+'_'+p]; if(!h) return '<td class="hm" style="background:#ECE8F5;color:#999">–</td>'; const v = Math.round(100*h[0]/h[1]); const bg = v>=85?'#CFE5D8':(v>=75?'#F4E3B5':'#EBC4C0'); const fg = v>=85?CLR.good:(v>=75?'#7a5b06':CLR.bad); return '<td class="hm" style="background:'+bg+';color:'+fg+'">'+v+'%</td>'; }).join('')+'</tr>').join('')+'</table>';
   const ranked = DB.students.map(s=>{ const r = DB.attendance.filter(a=>a.studentId===s.id); return {s, p:r.length?Math.round(100*r.filter(a=>a.status==='P').length/r.length):null, held:r.length}; }).filter(x=>x.p!==null);
   const below = ranked.filter(x=>x.p<75), risk = ranked.slice().sort((a,b)=>a.p-b.p).slice(0,8);
   const today = todayStr(), tRecs = DB.attendance.filter(a=>a.date===today), tPct = tRecs.length?Math.round(100*tRecs.filter(a=>a.status==='P').length/tRecs.length):null;
@@ -3177,7 +3194,7 @@ function renderAdminAnalytics(){
   const pctAx = {min:0,max:100,ticks:{callback:v=>v+'%'},grid:{color:CLR.grid}};
   new Chart($('#ch-donut'), {type:'doughnut', data:{labels:['Present','Absent'], datasets:[{data:[o.present, o.held-o.present], backgroundColor:[CLR.good,CLR.bad], borderWidth:0}]}, options:{maintainAspectRatio:false, cutout:'66%', plugins:{legend:{position:'bottom'}}}});
   const dp = dates.map(pctOn);
-  new Chart($('#ch-line'), {type:'line', data:{labels:dates.map(d=>d.slice(5)), datasets:[{label:'Attendance %', data:dp, borderColor:CLR.brand, backgroundColor:'rgba(14,90,107,.12)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:dp.map(clrFor)}]}, options:{maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}}, scales:{y:pctAx, x:{grid:{display:false}}}}, plugins:[targetLine]});
+  new Chart($('#ch-line'), {type:'line', data:{labels:dates.map(d=>d.slice(5)), datasets:[{label:'Attendance %', data:dp, borderColor:CLR.brand, backgroundColor:'rgba(67,56,168,.12)', fill:true, tension:.3, pointRadius:3, pointBackgroundColor:dp.map(clrFor)}]}, options:{maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}}, scales:{y:pctAx, x:{grid:{display:false}}}}, plugins:[targetLine]});
   const subs = DB.subjects.map(su=>({n:su.name, p:subjectOverallStats(su.id).pct})).sort((a,b)=>a.p-b.p);
   new Chart($('#ch-sub'), {type:'bar', data:{labels:subs.map(x=>x.n), datasets:[{data:subs.map(x=>x.p), backgroundColor:subs.map(x=>clrFor(x.p)), borderRadius:4}]}, options:{indexAxis:'y', maintainAspectRatio:false, plugins:{legend:{display:false}, targetLine:{value:75}, tooltip:{callbacks:{label:c=>c.parsed.x+'% attendance'}}}, scales:{x:pctAx, y:{grid:{display:false}}}}, plugins:[targetLine]});
   const cls = DB.classes.map(c=>({n:c.course+' S'+c.semester+'-'+c.section, p:classOverallStats(c.id).pct}));
@@ -3208,8 +3225,8 @@ async function queueMail(id, m, once){
   catch(e){ if(once && /HTTP 409/.test(e.message)) return 'duplicate'; throw e; }
 }
 function mailWrap(title, inner){
-  return '<div style="font-family:Arial,sans-serif;max-width:560px;color:#0B2530;"><h2 style="color:#0E5A6B;margin:0 0 10px;">'+escapeHtml(title)+'</h2>'+inner
-    +'<p style="color:#5C7077;font-size:12px;margin-top:22px;">'+escapeHtml(collegeName())+' · automated message</p></div>';
+  return '<div style="font-family:Arial,sans-serif;max-width:560px;color:#1F1B3A;"><h2 style="color:#4338A8;margin:0 0 10px;">'+escapeHtml(title)+'</h2>'+inner
+    +'<p style="color:#6B6680;font-size:12px;margin-top:22px;">'+escapeHtml(collegeName())+' · automated message</p></div>';
 }
 
 /* Sent to the subject's teacher as soon as attendance is saved. */
@@ -3221,7 +3238,7 @@ function attendanceMarkedMail(owner, marker, subject, cls, date, period, recs, i
   const where=clsLabel(cls), time=PERIOD_TIMES[period]||'';
   const verb=isUpdate?'updated':'marked';
   const subjectLine='Attendance '+verb+': '+subject.name+' · '+where+' · '+date+' (Period '+period+')';
-  const td='padding:6px 10px;border-bottom:1px solid #CCDADD;';
+  const td='padding:6px 10px;border-bottom:1px solid #E3DCCB;';
   const absRows=shown.map(s=>'<tr><td style="'+td+'">'+escapeHtml(s.regNo)+'</td><td style="'+td+'">'+escapeHtml(s.name)+'</td></tr>').join('');
   const text='Hello '+owner.name+',\n\nAttendance was '+verb+' for '+subject.name+' ('+where+') on '+date+', Period '+period+(time?' ('+time+')':'')+'.\n'
     +'Marked by: '+marker.name+'\nPresent: '+present+'  Absent: '+absent+'  Total: '+total+'  ('+pct+'% present)\n'
@@ -3264,7 +3281,7 @@ async function loadMailLog(){
   if(!BACKEND_ON()){ MAIL_UI.log=[]; MAIL_UI.logMsg='Connect the database in Settings to see sent emails.'; return; }
   try{
     const c=getSupabaseCfg();
-    const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:25}});
+    const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:10}});
     MAIL_UI.log=items.filter(i=>i.document).map(i=>decMailDoc(i.document));
     MAIL_UI.logMsg=MAIL_UI.log.length?'':'No emails yet.';
   }catch(e){ MAIL_UI.log=[]; MAIL_UI.logMsg='Could not load the email log ('+e.message+'). Publish the updated Firestore rules (Settings) so the "mail" collection is allowed.'; }
@@ -3283,7 +3300,7 @@ function mailLogHtml(){
 async function purgeOldMail(){
   if(!BACKEND_ON()) return;
   try{
-    if(Date.now()-Number(localStorage.getItem('atl_mail_purge')||0) < 20*3600000) return;
+    if(Date.now()-Number(localStorage.getItem('atl_mail_purge')||0) < 7*86400000) return;
     const c=getSupabaseCfg(), cutoff=Date.now()-30*86400000;
     for(let round=0; round<5; round++){
       const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}],
@@ -3380,7 +3397,7 @@ async function mrLoad(){
   if(!BACKEND_ON()){ MR.log=[]; MR.msg='Connect the database in Settings to send and see mails.'; return; }
   try{
     const c=getSupabaseCfg();
-    const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:100}});
+    const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:30}});
     MR.log=items.filter(i=>i.document).map(i=>{ const m=decMailDoc(i.document); m.id=i.document.name.split('/').pop();
       const k=i.document.fields&&i.document.fields.kind; m.kind=k&&k.stringValue?k.stringValue:''; return m; })
       .filter(m=>m.kind.indexOf('reminder-')===0);
@@ -3573,7 +3590,8 @@ function renderAdminAccount(){
 function initApp(){
   const ready = ()=>{ applyPeriodConfig(); applyBrand(); populateLoginSelects(); bindLoginEvents(); };
   if(!BACKEND_ON()){ ready(); return; }          // no database configured: start empty
-  document.addEventListener('visibilitychange',()=>{ if(!document.hidden && Date.now()-LAST_POLL>20000) pollRev(); });
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) saveSnap(true); else if(Date.now()-LAST_POLL>120000) pollRev(); });
+  window.addEventListener('pagehide',()=>saveSnap(true));
   loadAll().catch(err=>console.error(err)).finally(()=>{ ready(); schedulePoll(); });
 }
 initApp();
