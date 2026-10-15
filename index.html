@@ -497,255 +497,202 @@ async function migrateTeacherPasswords(){
 
 
 /* ============================= FIREBASE (FIRESTORE) BACKEND ============================= */
-/* Data lives in Firebase Firestore (one collection per table, one document per record).
-   Configure it from Admin > Settings (stored in this browser), OR paste your Project ID and
-   Web API key into DEFAULT_BACKEND below so every teacher's device connects automatically.
-   In this app's settings: "url" = Firebase Project ID, "key" = Firebase Web API key. */
-const DEFAULT_BACKEND = { url:'cls-atds', key:'AIzaSyBHLtqo-OtavzjQty9YBLyy7n80AOqEjyo' };
-/* READ-SAVING SETTINGS ------------------------------------------------------------
-   ATT_FROM: only attendance on/after this date is downloaded (YYYY-MM-DD). Set it to the start of the
-   current term/year, e.g. '2026-06-01'. Leave '' to load everything (costs many more reads). */
-const ATT_FROM = '2026-09-01';
-function attFullQuery(){
-  const q={from:[{collectionId:'attendance'}]};
-  if(ATT_FROM) q.where={fieldFilter:{field:{fieldPath:'date'},op:'GREATER_THAN_OR_EQUAL',value:{stringValue:ATT_FROM}}};
-  return {structuredQuery:q};
-}
-const LS_SUPABASE_KEY = 'attlaw_supabase_cfg_v1';
-
+/* All shared app data lives in Cloud Firestore: one collection per table, one document per record. */
+const DEFAULT_BACKEND = { url:'', key:'' };
+const ATT_FROM = ''; // Optional lower date bound (YYYY-MM-DD) to reduce attendance downloads.
+const LS_SUPABASE_KEY = 'atl_firestore_cfg_v1';
 function getSupabaseCfg(){
-  try{
-    const raw = localStorage.getItem(LS_SUPABASE_KEY);
-    const cfg = raw ? JSON.parse(raw) : {};
-    return {url:(cfg.url||DEFAULT_BACKEND.url||'').trim(), key:(cfg.key||DEFAULT_BACKEND.key||'').trim()};
-  }catch(e){ return {url:(DEFAULT_BACKEND.url||'').trim(), key:(DEFAULT_BACKEND.key||'').trim()}; }
+  let cfg={}; try{ cfg=JSON.parse(localStorage.getItem(LS_SUPABASE_KEY)||localStorage.getItem('attlaw_supabase_cfg_v1')||'{}'); }catch(e){}
+  const g=k=>String(cfg[k]||DEFAULT_BACKEND[k]||'').trim();
+  return {url:g('url'), key:g('key')};
 }
 function setSupabaseCfg(url, key){ localStorage.setItem(LS_SUPABASE_KEY, JSON.stringify({url, key})); }
-function clearSupabaseCfg(){ localStorage.removeItem(LS_SUPABASE_KEY); }
-function BACKEND_ON(){ const c = getSupabaseCfg(); return !!(c.url && c.key); }
-
-function fsRoot(c){ return 'projects/'+c.url+'/databases/(default)/documents'; }
-async function fsPost(c, suffix, body){
-  const r = await fetch('https://firestore.googleapis.com/v1/'+fsRoot(c)+suffix+'?key='+encodeURIComponent(c.key), {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
-  });
-  if(!r.ok) throw new Error('HTTP '+r.status);
-  return r.json();
+function clearSupabaseCfg(){ localStorage.removeItem(LS_SUPABASE_KEY); localStorage.removeItem('attlaw_supabase_cfg_v1'); }
+function BACKEND_ON(){ const c=getSupabaseCfg(); return !!(c.url && c.key); }
+function MAIL_ON(){ const c=getSupabaseCfg(); return !!(c.url && c.key); }
+function fsRoot(c){ return 'projects/'+encodeURIComponent(c.url)+'/databases/(default)/documents'; }
+function fsDocPath(c,path){ return fsRoot(c)+'/'+path.split('/').map(part=>{try{return encodeURIComponent(decodeURIComponent(part));}catch(e){return encodeURIComponent(part);}}).join('/'); }
+function fsUrl(c,suffix=''){ return 'https://firestore.googleapis.com/v1/'+fsRoot(c)+suffix+(suffix.includes('?')?'&':'?')+'key='+encodeURIComponent(c.key); }
+async function fsRequest(c, method, suffix='', body){
+  const o={method, headers:{}};
+  if(body!==undefined){ o.headers['Content-Type']='application/json'; o.body=JSON.stringify(body); }
+  const r=await fetch(fsUrl(c,suffix),o);
+  if(!r.ok){ let detail=''; try{ const j=await r.json(); detail=j.error&&j.error.message?' — '+j.error.message:''; }catch(e){} throw new Error('HTTP '+r.status+detail); }
+  if(r.status===204) return null;
+  const txt=await r.text(); return txt?JSON.parse(txt):null;
 }
+async function fsPost(c,suffix,body){ return fsRequest(c,'POST',suffix,body); }
+async function fsGet(c,path){ return fsRequest(c,'GET','/'+path); }
 function fsEnc(v){
-  if(v === null || v === undefined) return {nullValue:null};
-  if(typeof v === 'number') return Number.isInteger(v) ? {integerValue:String(v)} : {doubleValue:v};
-  if(typeof v === 'boolean') return {booleanValue:v};
-  if(typeof v === 'object') return {stringValue:JSON.stringify(v)};
+  if(v===null||v===undefined) return {nullValue:null};
+  if(typeof v==='number') return Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};
+  if(typeof v==='boolean') return {booleanValue:v};
+  if(typeof v==='object') return {stringValue:JSON.stringify(v)};
   return {stringValue:String(v)};
 }
-function fsDec(key, v){
+function fsDec(key,v){
+  if(!v) return null;
   if('stringValue' in v){
-    if(key === 'files'){ try{ return JSON.parse(v.stringValue); }catch(e){ return []; } }
-    return v.stringValue;
+    const str=v.stringValue;
+    if(typeof str==='string' && /^[\[{]/.test(str.trim())){ try{ return JSON.parse(str); }catch(e){} }
+    return str;
   }
   if('integerValue' in v) return Number(v.integerValue);
   if('doubleValue' in v) return v.doubleValue;
   if('booleanValue' in v) return v.booleanValue;
+  if('nullValue' in v) return null;
   return null;
 }
-// Attached class-note files are too big for a Firestore document (1 MB limit), so only name/size are shared.
-function prepRow(table, row){
-  if(table === 'sessions' && row && Array.isArray(row.files)){
-    return Object.assign({}, row, {files: row.files.map(f=>({name:f.name, size:f.size, fid:f.fid||'', chunks:f.chunks||0}))});
-  }
-  return row;
+function fsDocRow(doc){
+  const out={}, fields=doc.fields||{};
+  Object.keys(fields).forEach(k=>out[k]=fsDec(k,fields[k]));
+  const id=String(doc.name||'').split('/').pop();
+  if(out.id===undefined) out.id=rtDecKey(id);
+  return out;
 }
-function fsWrite(c, table, row){
-  const fields = {};
-  const r = prepRow(table, row);
-  Object.keys(r).forEach(k=>{ if(r[k] !== undefined) fields[k] = fsEnc(r[k]); });
-  if(table === 'attendance') fields.ts = {integerValue:String(Date.now())};   // lets other devices fetch only changed rows
-  return {update:{name: fsRoot(c)+'/'+table+'/'+r.id, fields}};
+function rtKey(id){ return String(id).replace(/[.$#\[\]\/%]/g,ch=>'%'+ch.charCodeAt(0).toString(16).toUpperCase().padStart(2,'0')); }
+function rtDecKey(k){ try{ return decodeURIComponent(k); }catch(e){ return k; } }
+function fsRowWrite(table,row){
+  const r=prepRow(table,row), fields={};
+  Object.keys(r).forEach(k=>{ if(r[k]!==undefined) fields[k]=fsEnc(r[k]); });
+  if(table==='attendance') fields.ts=fsEnc(Date.now());
+  return {p:table+'/'+rtKey(r.id), fields};
+}
+function fsValueDocFields(value){ const fields={}; Object.keys(value||{}).forEach(k=>{ if(value[k]!==undefined) fields[k]=fsEnc(value[k]); }); return fields; }
+async function fsRunQuery(c, collection, where){
+  const structuredQuery={from:[{collectionId:collection}]};
+  if(where) structuredQuery.where={fieldFilter:{field:{fieldPath:where.field},op:where.op,value:fsEnc(where.value)}};
+  const items=await fsPost(c,':runQuery',{structuredQuery});
+  return (items||[]).filter(x=>x.document).map(x=>x.document);
+}
+async function fsTable(c,table){
+  let docs;
+  if(table==='attendance' && ATT_FROM) docs=await fsRunQuery(c,table,{field:'date',op:'GREATER_THAN_OR_EQUAL',value:ATT_FROM});
+  else docs=await fsRunQuery(c,table);
+  return docs.map(fsDocRow);
+}
+async function fsGetTableDoc(c,table,id){
+  const doc=await fsGet(c,'/'+table+'/'+encodeURIComponent(rtKey(id)));
+  return doc?fsDocRow(doc):null;
+}
+function prepRow(table,row){
+  if(table==='sessions' && row && Array.isArray(row.files)) return Object.assign({},row,{files:row.files.map(f=>({name:f.name,size:f.size,fid:f.fid||'',chunks:f.chunks||0}))});
+  return row;
 }
 async function apiGetAll(){
   if(!BACKEND_ON()) return {ok:false};
-  const t0=Date.now();
-  const c = getSupabaseCfg();
   try{
-    const results = await Promise.all(SYNC_TABLES.map(t=>
-      fsPost(c, ':runQuery', t==='attendance' ? attFullQuery() : {structuredQuery:{from:[{collectionId:t}]}}).then(items=>
-        items.filter(i=>i.document).map(i=>{
-          const o = {};
-          const f = i.document.fields || {};
-          Object.keys(f).forEach(k=>{ o[k] = fsDec(k, f[k]); });
-          if(o.id === undefined) o.id = i.document.name.split('/').pop();
-          return o;
-        })
-      )
-    ));
-    const data = {};
-    SYNC_TABLES.forEach((t,i)=> data[t] = results[i]);
-    ATT_CURSOR=t0; return {ok:true, data};
-  }catch(err){ console.error('[sync] load failed', err); return {ok:false, error:err.message}; }
+    const c=getSupabaseCfg(), results=await Promise.all(SYNC_TABLES.map(t=>fsTable(c,t)));
+    const data={}; SYNC_TABLES.forEach((t,i)=>data[t]=results[i]);
+    ATT_CURSOR=Date.now(); return {ok:true,data};
+  }catch(err){ console.error('[sync] load failed',err); return {ok:false,error:err.message}; }
 }
 const LAST_REV={}; let REV_SEEN=null, POLL_BUSY=false, PENDING=false, ATT_CURSOR=0, LAST_POLL=0;
-function decDoc(d){ const o={}; const f=d.fields||{}; Object.keys(f).forEach(k=>{ o[k]=fsDec(k,f[k]); }); if(o.id===undefined) o.id=d.name.split('/').pop(); return o; }
-async function fetchAttendanceFull(c){ const t0=Date.now(); const items=await fsPost(c,':runQuery',attFullQuery()); ATT_CURSOR=t0; return items.filter(i=>i.document).map(i=>decDoc(i.document)); }
-/* Reads ONLY attendance rows written since the last sync (2 min overlap covers clock differences). */
+async function fetchAttendanceFull(c){ const rows=await fsTable(c,'attendance'); ATT_CURSOR=Date.now(); return rows; }
 async function fetchAttendanceDelta(c){
-  const t0=Date.now();
-  const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'attendance'}],
-    where:{fieldFilter:{field:{fieldPath:'ts'},op:'GREATER_THAN_OR_EQUAL',value:{integerValue:String(Math.max(0,ATT_CURSOR-120000))}}}}});
-  const map=new Map(DB.attendance.map(r=>[r.id,r]));
-  items.filter(i=>i.document).forEach(i=>{ const o=decDoc(i.document); map.set(o.id,o); });
-  ATT_CURSOR=t0;
-  return Array.from(map.values());
+  const t0=Date.now(), docs=await fsRunQuery(c,'attendance',{field:'ts',op:'GREATER_THAN_OR_EQUAL',value:Math.max(0,ATT_CURSOR-120000)});
+  const map=new Map(DB.attendance.map(r=>[r.id,r])); docs.map(fsDocRow).forEach(o=>map.set(o.id,o)); ATT_CURSOR=t0; return Array.from(map.values());
 }
 /* ---- local cache (IndexedDB): page loads re-read only what changed ---- */
 function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('atl_cache',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 async function snapLoad(){ try{ const d=await idb(); return await new Promise(res=>{ const q=d.transaction('kv').objectStore('kv').get('snap'); q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null); }); }catch(e){ return null; } }
 let _snapT;
 function saveSnap(now){
-  clearTimeout(_snapT);
-  _snapT=setTimeout(async()=>{ try{
+  clearTimeout(_snapT); _snapT=setTimeout(async()=>{ try{
     const c=getSupabaseCfg(), data={}, rv=Object.assign({},REV_SEEN||{});
-    Object.keys(LAST_REV).forEach(t=>{ if(t!=='attendance') delete rv[t]; });      // tables this device wrote: re-read next time to be safe
-    SYNC_TABLES.forEach(t=>{ data[t]= t==='sessions' ? DB.sessions.map(x=>Object.assign({},x,{files:(x.files||[]).map(f=>({name:f.name,size:f.size,fid:f.fid||'',chunks:f.chunks||0}))})) : DB[t]; });
-    const d=await idb(); d.transaction('kv','readwrite').objectStore('kv').put({cfg:c.url+'|'+ATT_FROM, rev:rv, attCursor:ATT_CURSOR, data},'snap');
+    Object.keys(LAST_REV).forEach(t=>{ if(t!=='attendance') delete rv[t]; });
+    SYNC_TABLES.forEach(t=>{ data[t]=t==='sessions'?DB.sessions.map(x=>Object.assign({},x,{files:(x.files||[]).map(f=>({name:f.name,size:f.size,fid:f.fid||'',chunks:f.chunks||0}))})):DB[t]; });
+    const d=await idb(); d.transaction('kv','readwrite').objectStore('kv').put({cfg:c.url+'|'+ATT_FROM,rev:rv,attCursor:ATT_CURSOR,data},'snap');
   }catch(e){} },now?0:1500);
 }
 async function loadAll(){
-  const c=getSupabaseCfg(), rev=await getRev();
-  if(!rev){ const res=await apiGetAll(); if(res&&res.ok) SYNC_TABLES.forEach(t=>{ DB[t]=res.data[t]||[]; }); return; }
+  const c=getSupabaseCfg(), sn=await snapLoad(), same=(sn&&sn.cfg===c.url+'|'+ATT_FROM&&sn.data)?sn:null;
+  const rev=await getRev();
+  if(!rev){ if(same){ SYNC_TABLES.forEach(t=>{DB[t]=Array.isArray(same.data[t])?same.data[t]:[];}); ATT_CURSOR=same.attCursor||0; return; }
+    const res=await apiGetAll(); if(res&&res.ok) SYNC_TABLES.forEach(t=>DB[t]=res.data[t]||[]); return; }
   REV_SEEN=rev;
-  const sn=await snapLoad(), same=(sn&&sn.cfg===c.url+'|'+ATT_FROM&&sn.data)?sn:null;
-  const delSame=!!same && same.rev.attendance_del===rev.attendance_del;
+  const delSame=!!same&&same.rev.attendance_del===rev.attendance_del;
   await Promise.all(SYNC_TABLES.map(async t=>{
     if(t==='attendance'){
-      if(same && delSame && Array.isArray(same.data.attendance) && same.attCursor>0){ DB.attendance=same.data.attendance; ATT_CURSOR=same.attCursor; DB.attendance=await fetchAttendanceDelta(c); }
-      else DB.attendance=await fetchAttendanceFull(c);
-      return;
+      if(same&&delSame&&Array.isArray(same.data.attendance)&&same.attCursor>0){ DB.attendance=same.data.attendance; ATT_CURSOR=same.attCursor; DB.attendance=await fetchAttendanceDelta(c); }
+      else DB.attendance=await fetchAttendanceFull(c); return;
     }
-    if(same && rev[t]!==undefined && same.rev[t]===rev[t] && Array.isArray(same.data[t])){ DB[t]=same.data[t]; return; }
+    if(same&&rev[t]!==undefined&&same.rev[t]===rev[t]&&Array.isArray(same.data[t])){ DB[t]=same.data[t]; return; }
     DB[t]=await fetchTable(c,t);
-  }));
-  saveSnap(true);
+  })); saveSnap(true);
 }
 function schedulePoll(){
   const idle=Date.now()-LAST_ACT;
-  setTimeout(async()=>{ try{ await pollRev(); }catch(e){} schedulePoll(); }, idle>300000?900000:(state.role==='student'?600000:240000));
+  setTimeout(async()=>{try{await pollRev();}catch(e){} schedulePoll();},idle>300000?1200000:(state.role==='student'?900000:480000));
 }
-function revWrite(c, tables){
-  tables=[].concat(tables); const ts=Date.now(), fields={};
-  tables.forEach(t=>{ LAST_REV[t]=ts; fields[t]={integerValue:String(ts)}; });
-  return {update:{name:fsRoot(c)+'/meta/rev', fields}, updateMask:{fieldPaths:tables}};
+function revWrite(c,tables){ const ts=Date.now(); const fields={}; [].concat(tables).forEach(t=>{LAST_REV[t]=ts;fields[t]=ts;}); return {p:'meta/rev',fields}; }
+function chunkWrites(w){ const o=[]; for(let i=0;i<w.length;i+=450)o.push(w.slice(i,i+450)); return o; }
+function fsCommitWrite(c,w){
+  if(w.v===null) return {delete:fsDocPath(c,w.p)};
+  const fields={}; Object.keys(w.v||{}).forEach(k=>{if(w.v[k]!==undefined)fields[k]=fsEnc(w.v[k]);});
+  return {update:{name:fsDocPath(c,w.p),fields}};
 }
-function chunkWrites(w){ const o=[]; for(let i=0;i<w.length;i+=450) o.push(w.slice(i,i+450)); return o; }
-function syncFail(err){
-  console.error('[sync] failed',err);
-  syncNotice('Could not save to the database ('+err.message+'). '+(/40[13]/.test(err.message)?'Firestore rules are blocking the write - publish the updated rules from Admin > Settings.':'Check the internet connection and try again.'), true);
-}
-/* Pushes ONLY the given writes. The "something changed" marker travels in the same request,
-   so a normal edit costs one round-trip instead of two. */
-async function pushWrites(writes, tables){
-  const c=getSupabaseCfg();
-  if(!writes.length) return true;
-  const chunks=chunkWrites(writes);
+function syncFail(err){ console.error('[sync] failed',err); syncNotice('Could not save to Firestore ('+err.message+'). '+(/40[13]/.test(err.message)?'Firestore Security Rules are blocking the write. Check your Firestore rules.':'Check the internet connection and Firebase project settings.'),true); }
+async function pushWrites(writes,tables){
+  const c=getSupabaseCfg(); if(!writes.length) return true;
   try{
-    if(chunks.length===1){
-      try{ await fsPost(c,':commit',{writes:chunks[0].concat([revWrite(c,tables)])}); }
-      catch(err){
-        if(!/40[13]/.test(err.message)) throw err;
-        await fsPost(c,':commit',{writes:chunks[0]});     // rules may lack "meta": still save the data
-        syncNotice('Saved, but other devices will not update live. Add "meta" to the Firestore rules (Admin > Settings).', true);
-      }
-    } else {
-      await Promise.all(chunks.map(ch=>fsPost(c,':commit',{writes:ch})));
-      await fsPost(c,':commit',{writes:[revWrite(c,tables)]});
-    }
-  }catch(err){ syncFail(err); return false; }
-  return true;
+    const rev=revWrite(c,tables), chunks=chunkWrites(writes);
+    if(chunks.length===1) await fsPost(c,':commit',{writes:chunks[0].map(w=>fsCommitWrite(c,w)).concat([{update:{name:fsDocPath(c,rev.p),fields:fsValueDocFields(rev.fields)},updateMask:{fieldPaths:Object.keys(rev.fields)}}])});
+    else { for(const chunk of chunks) await fsPost(c,':commit',{writes:chunk.map(w=>fsCommitWrite(c,w))}); await fsPost(c,':commit',{writes:[{update:{name:fsDocPath(c,rev.p),fields:fsValueDocFields(rev.fields)},updateMask:{fieldPaths:Object.keys(rev.fields)}}]}); }
+  }catch(err){syncFail(err);return false;} return true;
 }
-async function syncBatch(table, ups, dels){
+async function syncBatch(table,ups,dels){
   if(!BACKEND_ON()) return true;
-  const c=getSupabaseCfg();
-  const w=(ups||[]).map(r=>fsWrite(c,table,r)).concat((dels||[]).map(id=>({delete:fsRoot(c)+'/'+table+'/'+id})));
+  const w=(ups||[]).map(r=>{const x=fsRowWrite(table,r);return {p:x.p,v:Object.fromEntries(Object.keys(x.fields).map(k=>[k,fsDec(k,x.fields[k])]))};})
+    .concat((dels||[]).map(id=>({p:table+'/'+rtKey(id),v:null})));
   return pushWrites(w,(table==='attendance'&&(dels||[]).length)?[table,'attendance_del']:[table]);
 }
-/* Several tables in ONE request, e.g. timetable + period settings together. */
 async function syncMulti(parts){
-  if(!BACKEND_ON()) return true;
-  const c=getSupabaseCfg(), w=[], tables=[];
-  parts.forEach(p=>{
-    const x=(p.ups||[]).map(r=>fsWrite(c,p.table,r)).concat((p.dels||[]).map(id=>({delete:fsRoot(c)+'/'+p.table+'/'+id})));
-    if(x.length){ x.forEach(i=>w.push(i)); tables.push(p.table); }
-  });
+  if(!BACKEND_ON())return true; const w=[],tables=[];
+  parts.forEach(p=>{(p.ups||[]).forEach(r=>{const x=fsRowWrite(p.table,r),v={};Object.keys(x.fields).forEach(k=>v[k]=fsDec(k,x.fields[k]));w.push({p:x.p,v});});(p.dels||[]).forEach(id=>w.push({p:p.table+'/'+rtKey(id),v:null}));if((p.ups||[]).length||(p.dels||[]).length)tables.push(p.table);});
   return pushWrites(w,tables);
 }
-/* Pushes every local table in one go (used only by import / restore / "push local data"). */
 async function syncSeedAll(){
-  if(!BACKEND_ON()) return true;
-  const c=getSupabaseCfg(), w=[];
-  SYNC_TABLES.forEach(t=>DB[t].forEach(r=>w.push(fsWrite(c,t,r))));
+  if(!BACKEND_ON())return true; const w=[];
+  SYNC_TABLES.forEach(t=>DB[t].forEach(r=>{const x=fsRowWrite(t,r),v={};Object.keys(x.fields).forEach(k=>v[k]=fsDec(k,x.fields[k]));w.push({p:x.p,v});}));
   return pushWrites(w,SYNC_TABLES);
 }
 let _noticeT;
-function syncNotice(msg, bad){
-  let el=document.getElementById('sync-notice');
-  if(!el){ el=document.createElement('div'); el.id='sync-notice'; el.setAttribute('role','status');
-    el.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:90vw;padding:10px 16px;border-radius:4px;font-size:.85rem;z-index:100;box-shadow:0 2px 10px rgba(0,0,0,.25);color:#fff;';
-    document.body.appendChild(el); }
-  el.style.background = bad ? '#A33636' : '#2F6F4E'; el.textContent = msg; el.style.display = 'block';
-  clearTimeout(_noticeT); _noticeT = setTimeout(()=>{ el.style.display='none'; }, bad ? 12000 : 2500);
-}
-function syncUpsert(t,r){ return r ? syncBatch(t,[r],[]) : Promise.resolve(); }
-function syncBulkUpsert(t,rs){ return (rs&&rs.length) ? syncBatch(t,rs,[]) : Promise.resolve(); }
-function syncDelete(t,id){ return syncBatch(t,[],[id]); }
-async function fetchTable(c,t){
-  const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:t}]}});
-  return items.filter(i=>i.document).map(i=>{ const o={}; const f=i.document.fields||{}; Object.keys(f).forEach(k=>{ o[k]=fsDec(k,f[k]); }); if(o.id===undefined) o.id=i.document.name.split('/').pop(); return o; });
-}
+function syncNotice(msg,bad){let el=document.getElementById('sync-notice');if(!el){el=document.createElement('div');el.id='sync-notice';el.setAttribute('role','status');el.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);max-width:90vw;padding:10px 16px;border-radius:4px;font-size:.85rem;z-index:100;box-shadow:0 2px 10px rgba(0,0,0,.25);color:#fff;';document.body.appendChild(el);}el.style.background=bad?'#A33636':'#2F6F4E';el.textContent=msg;el.style.display='block';clearTimeout(_noticeT);_noticeT=setTimeout(()=>{el.style.display='none';},bad?12000:2500);}
+function syncUpsert(t,r){return r?syncBatch(t,[r],[]):Promise.resolve();}
+function syncBulkUpsert(t,rs){return(rs&&rs.length)?syncBatch(t,rs,[]):Promise.resolve();}
+function syncDelete(t,id){return syncBatch(t,[],[id]);}
+async function fetchTable(c,t){return fsTable(c,t);}
 async function getRev(){
-  const c=getSupabaseCfg();
-  try{ const r=await fetch('https://firestore.googleapis.com/v1/'+fsRoot(c)+'/meta/rev?key='+encodeURIComponent(c.key));
-    if(!r.ok){ if(r.status===404) return {}; if(!window._revWarned){ window._revWarned=true; syncNotice('Live updates are off (HTTP '+r.status+'). Add "meta" to the Firestore rules (Admin > Settings).', true); } return null; }
-    const f=(await r.json()).fields||{}; const o={}; Object.keys(f).forEach(k=>{ o[k]=Number(f[k].integerValue); }); return o; }catch(e){ return null; }
+  const c=getSupabaseCfg(); try{const d=await fsGet(c,'/meta/rev'),f=d.fields||{},o={};Object.keys(f).forEach(k=>o[k]=Number(fsDec(k,f[k])));return o;}
+  catch(e){if(/HTTP 404/.test(e.message))return null;if(!window._revWarned){window._revWarned=true;syncNotice('Live updates are unavailable ('+e.message+'). Check Firestore Security Rules.',true);}return null;}
 }
-function rerenderView(){
-  const y=scrollY; try{ enterApp(); }catch(e){ logout(); return; } scrollTo(0,y);
-}
-function liveRefresh(){
-  const ae=document.activeElement;
-  const editing=ae&&/^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)&&!ae.closest('#topbar');
-  if(editing||ttDirty()||(state.role==='teacher'&&state.teacherTab==='mark')){ PENDING=true; return; }
-  PENDING=false; rerenderView();
-}
+function rerenderView(){const y=scrollY;try{enterApp();}catch(e){logout();return;}scrollTo(0,y);}
+function liveRefresh(){const ae=document.activeElement,editing=ae&&/^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)&&!ae.closest('#topbar');if(editing||ttDirty()||(state.role==='teacher'&&state.teacherTab==='mark')){PENDING=true;return;}PENDING=false;rerenderView();}
 async function pollRev(){
-  if(!BACKEND_ON()||document.hidden||POLL_BUSY||!state.role) return;
-  if(Date.now()-LAST_ACT>1800000) return;   // idle 30+ min: no reads at all
-  LAST_POLL=Date.now();
-  if(PENDING) liveRefresh();
-  POLL_BUSY=true;
-  try{
-    const rev=await getRev(); if(!rev) return;
-    const old=REV_SEEN||{}; const changed=Object.keys(rev).filter(k=>SYNC_TABLES.includes(k)&&rev[k]!==old[k]&&rev[k]!==LAST_REV[k]);
-    const attDel=rev.attendance_del!==old.attendance_del && rev.attendance_del!==LAST_REV.attendance_del;
-    REV_SEEN=rev; if(!changed.length && !attDel) return;
-    if(attDel && !changed.includes('attendance')) changed.push('attendance');
-    const c=getSupabaseCfg();
-    const res=await Promise.all(changed.map(t=>t==='attendance' ? (attDel?fetchAttendanceFull(c):fetchAttendanceDelta(c)) : fetchTable(c,t)));
-    changed.forEach((t,i)=>{ DB[t]=res[i]; });
-    saveSnap();
-    if(changed.includes('settings')){
-      applyPeriodConfig(); applyBrand();
-      const ms=state.role==='teacher' && state.teacherTab==='mark' ? $('#mark-period') : null;
-      if(ms){ if(state.markPeriod>PERIODS.length) state.markPeriod=1; ms.innerHTML=PERIODS.map(p=>'<option value="'+p+'" '+(p===state.markPeriod?'selected':'')+'>Period '+p+' · '+PERIOD_TIMES[p]+'</option>').join(''); }
-    }
-    liveRefresh();
-  }catch(e){ console.error(e); } finally{ POLL_BUSY=false; }
+  if(!BACKEND_ON()||document.hidden||POLL_BUSY||!state.role)return;if(Date.now()-LAST_ACT>1800000)return;LAST_POLL=Date.now();if(PENDING)liveRefresh();POLL_BUSY=true;
+  try{const rev=await getRev();if(!rev)return;const old=REV_SEEN||{},changed=Object.keys(rev).filter(k=>SYNC_TABLES.includes(k)&&rev[k]!==old[k]&&rev[k]!==LAST_REV[k]);const attDel=rev.attendance_del!==old.attendance_del&&rev.attendance_del!==LAST_REV.attendance_del;REV_SEEN=rev;if(!changed.length&&!attDel)return;if(attDel&&!changed.includes('attendance'))changed.push('attendance');const c=getSupabaseCfg();const res=await Promise.all(changed.map(t=>t==='attendance'?(attDel?fetchAttendanceFull(c):fetchAttendanceDelta(c)):fetchTable(c,t)));changed.forEach((t,i)=>DB[t]=res[i]);saveSnap();if(changed.includes('settings')){applyPeriodConfig();applyBrand();const ms=state.role==='teacher'&&state.teacherTab==='mark'?$('#mark-period'):null;if(ms){if(state.markPeriod>PERIODS.length)state.markPeriod=1;ms.innerHTML=PERIODS.map(p=>'<option value="'+p+'" '+(p===state.markPeriod?'selected':'')+'>Period '+p+' · '+PERIOD_TIMES[p]+'</option>').join('');}}liveRefresh();}
+  catch(e){console.error(e);}finally{POLL_BUSY=false;}
 }
-async function testSupabaseConnection(url, key){
+async function testSupabaseConnection(projectId,key){
+  // This app uses the Firestore REST API and its own app login. It does not
+  // send a Firebase Auth ID token, so the connection test must match the
+  // allow-list rules that do not require request.auth.
   try{
-    await fsPost({url, key}, ':runQuery', {structuredQuery:{from:[{collectionId:'classes'}], limit:1}});
+    const c={url:projectId,key};
+    await fsRequest(c,'GET','/meta?pageSize=1');
     return {ok:true};
-  }catch(err){
-    return {ok:false, msg:err.message+' — check the Project ID and Web API key, that you created a Firestore database (Build > Firestore Database), and that the rules from the box below are published.'};
+  } catch(err) {
+    const detail=err.message||'Unknown error';
+    let hint='Check the Project ID, Web API key, and that the (default) Firestore database exists.';
+    if(/HTTP 403|PERMISSION_DENIED|Missing or insufficient permissions/i.test(detail)){
+      hint='Firestore Security Rules are denying access. This HTML uses its own app login and does not send Firebase Authentication credentials. For this version, publish allow-list rules that do not require request.auth, including the meta collection. Do not use these open rules with real student data.';
+    } else if(/HTTP 401|UNAUTHENTICATED/i.test(detail)){
+      hint='The request requires authentication. This HTML does not currently send a Firebase Authentication ID token.';
+    } else if(/HTTP 404|NOT_FOUND/i.test(detail)){
+      hint='Check that the (default) Cloud Firestore database exists in Native mode for this project.';
+    }
+    return {ok:false,msg:detail+' — '+hint};
   }
 }
 
@@ -962,8 +909,7 @@ async function uploadSessionFile(f){
   for(let i=0;i<f.dataUrl.length;i+=FILE_CHUNK) parts.push(f.dataUrl.slice(i, i+FILE_CHUNK));
   try{
     for(let i=0;i<parts.length;i++){
-      await fsPost(c, ':commit', {writes:[{update:{name:fsRoot(c)+'/sessionfiles/'+fid+'_'+i,
-        fields:{id:{stringValue:fid+'_'+i}, idx:{integerValue:String(i)}, data:{stringValue:parts[i]}}}}]});
+      await fsPost(c,':commit',{writes:[{update:{name:fsDocPath(c,'sessionfiles/'+encodeURIComponent(fid+'_'+i)),fields:{id:fsEnc(fid+'_'+i),idx:fsEnc(i),data:fsEnc(parts[i])}}}]});
     }
   }catch(err){ syncFail(err); return false; }
   f.fid = fid; f.chunks = parts.length;
@@ -984,8 +930,8 @@ async function saveSession(subjectId, classId, teacherId, date, period, topics, 
 async function deleteSessionFileChunks(files){
   if(!BACKEND_ON()) return;
   const c = getSupabaseCfg(), w = [];
-  (files||[]).forEach(f=>{ if(f && f.fid) for(let i=0;i<(f.chunks||0);i++) w.push({delete:fsRoot(c)+'/sessionfiles/'+f.fid+'_'+i}); });
-  try{ for(const part of chunkWrites(w)) await fsPost(c, ':commit', {writes:part}); }catch(err){ console.error('[sync] chunk cleanup failed', err); }
+  (files||[]).forEach(f=>{ if(f && f.fid) for(let i=0;i<(f.chunks||0);i++) w.push({p:'sessionfiles/'+f.fid+'_'+i,v:null}); });
+  try{ for(const part of chunkWrites(w)) await fsPost(c,':commit',{writes:part.map(x=>({delete:fsDocPath(c,x.p)}))}); }catch(err){ console.error('[sync] chunk cleanup failed', err); }
 }
 async function removeSessionEntry(id){
   const rec = DB.sessions.find(s=>s.id===id); if(!rec) return true;
@@ -1047,9 +993,7 @@ async function fetchSessionFileBlob(f){
   if(FILE_CACHE.has(f.fid)) return FILE_CACHE.get(f.fid);
   const c = getSupabaseCfg(), pieces = [];
   for(let i=0;i<f.chunks;i++){
-    const r = await fetch('https://firestore.googleapis.com/v1/'+fsRoot(c)+'/sessionfiles/'+f.fid+'_'+i+'?key='+encodeURIComponent(c.key));
-    if(!r.ok) throw new Error('HTTP '+r.status);
-    pieces.push(((await r.json()).fields||{}).data.stringValue);
+    const o = await fsGet(c,'/sessionfiles/'+encodeURIComponent(f.fid+'_'+i)); const data=o&&o.fields&&o.fields.data&&o.fields.data.stringValue; if(!data) throw new Error('File chunk missing'); pieces.push(data);
   }
   const blob = dataUrlToBlob(pieces.join(''), f.name); FILE_CACHE.set(f.fid, blob); return blob;
 }
@@ -2519,25 +2463,22 @@ function handleOldWorkbook(e){
 }
 
 /* --- Settings (Firebase link + backup/restore) --- */
-const SETUP_SCRIPT = "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{collection}/{docId} {\n      allow read, write: if collection in ['classes','teachers','subjects','students','attendance','timetable','holidays','sessions','settings','meta','sessionfiles','mail'];\n    }\n  }\n}\n";
 
 function renderAdminSettings(){
   const cfg = getSupabaseCfg();
   const connected = BACKEND_ON();
-  let html = '<div class="page-head"><div><h1>Settings</h1><div class="sub">Connect a Firebase Firestore database so every device shares the same live data.</div></div></div>';
+  let html = '<div class="page-head"><div><h1>Settings</h1><div class="sub">Connect Cloud Firestore so every device shares the same live data.</div></div></div>';
 
   html += '<div class="card"><h3>Database connection <span class="status-pill '+(connected?'status-connected':'status-disconnected')+'" style="margin-left:8px;">'+(connected?'Connected':'Not connected — running on this device only')+'</span></h3>'
     + '<div class="form-row">'
-    + '<div class="field"><label>Firebase Project ID</label><input id="sb-url" placeholder="my-attendance-app" value="'+cfg.url+'"/></div>'
-    + '<div class="field"><label>Firebase Web API key</label><input id="sb-key" placeholder="AIza..." value="'+cfg.key+'"/></div>'
+    + '<div class="field"><label>Firebase Project ID</label><input id="sb-url" placeholder="my-attendance-app" value="'+escapeHtml(cfg.url)+'"/></div>'
+    + '<div class="field"><label>Firebase Web API key</label><input id="sb-key" placeholder="AIza..." value="'+escapeHtml(cfg.key)+'"/></div>'
     + '</div>'
     + '<div class="btn-row"><button class="btn btn-primary" id="sb-save">Save &amp; test connection</button>'
     + (connected ? '<button class="btn btn-ghost" id="sb-pull">Reload from database</button><button class="btn btn-ghost" id="sb-push">Push local data up</button><button class="btn btn-ghost" id="sb-disconnect">Disconnect</button>' : '')
     + '</div><div id="sb-status" class="sub" style="margin-top:10px;"></div></div>';
 
-  html += '<div class="card"><h3>One-time setup: Firestore rules</h3><p class="sub" style="margin-bottom:10px;">1) At console.firebase.google.com create a project. 2) Build &gt; Firestore Database &gt; Create database (any region, production mode). 3) Open the Rules tab, replace everything with the rules below, and Publish. 4) Project settings (gear icon) &gt; General: copy the <b>Project ID</b> and <b>Web API key</b> into the boxes above. Collections are created automatically. Class-note file attachments are stored in the sessionfiles collection (re-publish the rules if you set them up earlier). These rules let anyone who has your key read and write, so keep the file and key within your college.</p>'
-    + '<div class="sql-box" id="sb-sql">' + escapeHtml(SETUP_SCRIPT) + '</div>'
-    + '<div class="btn-row" style="margin-top:10px;"><button class="btn btn-ghost btn-sm" id="sb-copy-sql">Copy rules</button></div></div>';
+  html += '<div class="card"><h3>One-time setup: Cloud Firestore</h3><p class="sub" style="margin-bottom:10px;">1) Open Firebase Console. 2) Build &gt; Firestore Database &gt; Create database. 3) Copy the Project ID from Project settings &gt; General and the Web API key from Your apps. 4) Enter both values above and save. The app stores each table as a collection and each record as a document. Email delivery still uses the Firestore <b>Trigger Email from Firestore</b> extension.</p><p class="sub"><b>Security:</b> This HTML currently uses its own client-side app login and Firestore REST API without a Firebase Authentication ID token. Therefore, rules requiring request.auth will block its requests. Collection allow-list rules without request.auth can be used only for temporary testing; they do not secure student data. For production, integrate Firebase Authentication and role-based rules.</p></div>';
 
   const bd = getSetting('brand', {});
   html += '<div class="card"><h3>College logo &amp; front page</h3><div class="form-row">'
@@ -2565,20 +2506,18 @@ function renderAdminSettings(){
   $('#bn-save').addEventListener('click', ()=>{ setSetting('brand', {name:$('#bn-name').value.trim(), tagline:$('#bn-tag').value.trim(), details:$('#bn-det').value.trim(), logo:pendingLogo}); applyBrand(); alert('Front page saved.'); });
   $('#export-all').addEventListener('click', ()=>{ const wb = XLSX.utils.book_new(); SYNC_TABLES.forEach(t=>XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(DB[t].map(r=>Object.assign({}, r, r.files?{files:JSON.stringify(r.files)}:{})), {header:IMPORT_SCHEMA[t]}), t)); XLSX.writeFile(wb, 'Attendance_Ledger_Data.xlsx'); });
   $('#sb-save').addEventListener('click', async ()=>{
-    const url = $('#sb-url').value.trim();
-    const key = $('#sb-key').value.trim();
-    if(!url || !key){ $('#sb-status').textContent = 'Enter both the Project ID and the Web API key.'; return; }
-    $('#sb-status').textContent = 'Testing connection…';
-    const res = await testSupabaseConnection(url, key);
+    const url=$('#sb-url').value.trim(), key=$('#sb-key').value.trim();
+    if(!/^[a-z0-9-]+$/.test(url)){ $('#sb-status').textContent='Enter a valid Firebase Project ID (for example, my-attendance-app).'; return; }
+    if(!/^AIza[\w-]+$/.test(key)){ $('#sb-status').textContent='Enter the Firebase Web API key from Project settings.'; return; }
+    $('#sb-status').textContent='Testing Firestore connection…';
+    const res=await testSupabaseConnection(url,key);
     if(res.ok){
-      setSupabaseCfg(url, key);
-      $('#sb-status').textContent = 'Connected. Pushing your current data up so other devices can see it…';
-      await syncSeedAll();
-      $('#sb-status').textContent = 'Connected and synced.';
-      renderAdminSettings();
-    } else {
-      $('#sb-status').textContent = 'Could not connect: ' + res.msg;
-    }
+      setSupabaseCfg(url,key);
+      $('#sb-status').textContent='Connected. Uploading this device’s current data to Firestore…';
+      const ok=await syncSeedAll();
+      if(ok){ $('#sb-status').textContent='Connected and synced with Cloud Firestore.'; renderAdminSettings(); }
+      else $('#sb-status').textContent='Connection worked, but syncing failed. Check Firestore Security Rules.';
+    } else $('#sb-status').textContent='Could not connect: '+res.msg;
   });
   const pullBtn = $('#sb-pull');
   if(pullBtn) pullBtn.addEventListener('click', async ()=>{
@@ -2595,7 +2534,7 @@ function renderAdminSettings(){
   });
   $('#wipe-all').addEventListener('click', async ()=>{
     if(prompt('This deletes ALL data permanently. Type DELETE to confirm.')!=='DELETE') return;
-    const c=getSupabaseCfg(), w=[]; SYNC_TABLES.forEach(t=>{ DB[t].forEach(r=>w.push({delete:fsRoot(c)+'/'+t+'/'+r.id})); });
+    const c=getSupabaseCfg(), w=[]; SYNC_TABLES.forEach(t=>{ DB[t].forEach(r=>w.push({p:t+'/'+rtKey(r.id),v:null})); });
     if(BACKEND_ON() && !(await pushWrites(w,SYNC_TABLES.concat(['attendance_del'])))) return;
     SYNC_TABLES.forEach(t=>{ DB[t]=[]; });
     alert('All data deleted.'); renderAdminSettings();
@@ -2612,12 +2551,6 @@ function renderAdminSettings(){
       clearSupabaseCfg();
       renderAdminSettings();
     }
-  });
-  $('#sb-copy-sql').addEventListener('click', ()=>{
-    navigator.clipboard.writeText(SETUP_SCRIPT).then(()=>{
-      $('#sb-copy-sql').textContent = 'Copied!';
-      setTimeout(()=>{ $('#sb-copy-sql').textContent = 'Copy rules'; }, 1500);
-    });
   });
   $('#backup-export').addEventListener('click', ()=>{
     const payload = {}; SYNC_TABLES.forEach(t=> payload[t]=DB[t]);
@@ -3256,7 +3189,7 @@ async function mailAttendanceMarked(marker, subject, date, period, isUpdate){
   const owner=DB.teachers.find(t=>t.id===subject.teacherId) || marker;
   const to=normEmail(owner.email);
   if(!validEmail(to)) return {status:'noemail', to:''};
-  if(!BACKEND_ON()) return {status:'failed', to};
+  if(!MAIL_ON()) return {status:'failed', to};
   const cls=DB.classes.find(c=>c.id===subject.classId);
   const recs=DB.attendance.filter(a=>a.subjectId===subject.id && a.date===date && a.period===period);
   if(!recs.length) return {status:'failed', to};
@@ -3268,7 +3201,7 @@ async function mailAttendanceMarked(marker, subject, date, period, isUpdate){
 }
 
 /* ---- sent-mail log (shown on Admin > Admin Account) ---- */
-const MAIL_UI = {log:[], logMsg:'Loading…'};
+const MAIL_UI = {log:[], logMsg:'Loading…', loaded:false};
 function decMailDoc(d){
   const f=d.fields||{}, g=k=>f[k]&&('stringValue' in f[k])?f[k].stringValue:'';
   const msg=f.message&&f.message.mapValue?f.message.mapValue.fields||{}:{};
@@ -3277,14 +3210,16 @@ function decMailDoc(d){
   return {to, subject:msg.subject?msg.subject.stringValue:'', by:g('by'), createdAt:f.createdAt?Number(f.createdAt.integerValue):0,
     state:del.state?del.state.stringValue:'', error:del.error&&del.error.stringValue?del.error.stringValue:''};
 }
-async function loadMailLog(){
-  if(!BACKEND_ON()){ MAIL_UI.log=[]; MAIL_UI.logMsg='Connect the database in Settings to see sent emails.'; return; }
+async function loadMailLog(force=false){
+  if(MAIL_UI.loaded && !force) return;
+  if(!MAIL_ON()){ MAIL_UI.log=[]; MAIL_UI.logMsg='Connect the database in Settings to see sent emails.'; MAIL_UI.loaded=true; return; }
   try{
     const c=getSupabaseCfg();
     const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:10}});
     MAIL_UI.log=items.filter(i=>i.document).map(i=>decMailDoc(i.document));
     MAIL_UI.logMsg=MAIL_UI.log.length?'':'No emails yet.';
-  }catch(e){ MAIL_UI.log=[]; MAIL_UI.logMsg='Could not load the email log ('+e.message+'). Publish the updated Firestore rules (Settings) so the "mail" collection is allowed.'; }
+    MAIL_UI.loaded=true;
+  }catch(e){ MAIL_UI.log=[]; MAIL_UI.logMsg='Could not load the email log ('+e.message+'). Publish the updated Firestore rules (Settings) so the "mail" collection is allowed.'; MAIL_UI.loaded=true; }
 }
 function mailLogHtml(){
   if(!MAIL_UI.log.length) return '<p class="sub">'+escapeHtml(MAIL_UI.logMsg)+'</p>';
@@ -3298,7 +3233,7 @@ function mailLogHtml(){
 /* Housekeeping: deletes mails older than 30 days (replaces a Firestore TTL policy, which needs the paid plan).
    Runs from the admin login, at most once a day per browser, in small batches so it costs very few reads. */
 async function purgeOldMail(){
-  if(!BACKEND_ON()) return;
+  if(!MAIL_ON()) return;
   try{
     if(Date.now()-Number(localStorage.getItem('atl_mail_purge')||0) < 7*86400000) return;
     const c=getSupabaseCfg(), cutoff=Date.now()-30*86400000;
@@ -3394,7 +3329,7 @@ function mrBindPeople(){
 
 /* ---- sent-mail list (load / delete / print) ---- */
 async function mrLoad(){
-  if(!BACKEND_ON()){ MR.log=[]; MR.msg='Connect the database in Settings to send and see mails.'; return; }
+  if(!MAIL_ON()){ MR.log=[]; MR.msg='Connect the database in Settings to send and see mails.'; return; }
   try{
     const c=getSupabaseCfg();
     const items=await fsPost(c,':runQuery',{structuredQuery:{from:[{collectionId:'mail'}], orderBy:[{field:{fieldPath:'createdAt'},direction:'DESCENDING'}], limit:30}});
@@ -3458,7 +3393,7 @@ function mrPrint(){
 /* ---- send ---- */
 async function mrSend(){
   const msg=$('#mr-msg'), btn=$('#mr-send'), err=t=>{ msg.className='form-msg err'; msg.textContent=t; };
-  if(!BACKEND_ON()) return err('Connect the database in Settings first.');
+  if(!MAIL_ON()) return err('Connect the database in Settings first.');
   const custom=MR.what==='custom';
   if(custom && !MR.sub.trim()) return err('Enter a subject.');
   if(custom && !MR.body.replace(/\{name\}/g,'').trim()) return err('Write a message.');
@@ -3519,7 +3454,7 @@ function renderAdminMailReminder(){
 
 /* ============================= ADMIN ACCOUNT TAB ============================= */
 function renderAdminAccount(){
-  const A=adminAccount(), conn=BACKEND_ON();
+  const A=adminAccount(), conn=MAIL_ON();
   let html='<div class="page-head"><div><h1>Admin Account</h1><div class="sub">The single administrator login. Sign-in asks for your password and a code e-mailed to the admin address below.</div></div></div>';
   if(!A.email) html+='<div class="card"><p class="form-msg err" style="margin:0;"><b>No admin e-mail is set.</b> Until you add one below, admin sign-in is protected by the password only. Enter your admin e-mail, your current password, and verify it with the code we send.</p></div>';
   if(!conn) html+='<div class="card"><p class="form-msg err" style="margin:0;">Codes are sent by e-mail through the shared database. Connect it in Settings first.</p></div>';
@@ -3582,8 +3517,8 @@ function renderAdminAccount(){
     }
     pending=null; renderAdminAccount(); const m=$('#ac-msg'); m.textContent='Admin details updated.'; m.className='form-msg ok';
   });
-  $('#mr-refresh').addEventListener('click', async()=>{ await loadMailLog(); const el=$('#mr-log'); if(el) el.innerHTML=mailLogHtml(); });
-  if(!MAIL_UI.log.length) loadMailLog().then(()=>{ const el=$('#mr-log'); if(el) el.innerHTML=mailLogHtml(); });
+  $('#mr-refresh').addEventListener('click', async()=>{ await loadMailLog(true); const el=$('#mr-log'); if(el) el.innerHTML=mailLogHtml(); });
+  if(!MAIL_UI.loaded) loadMailLog().then(()=>{ const el=$('#mr-log'); if(el) el.innerHTML=mailLogHtml(); });
 }
 
 /* ============================= INIT ============================= */
