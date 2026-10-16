@@ -498,7 +498,7 @@ async function migrateTeacherPasswords(){
 
 /* ============================= FIREBASE (FIRESTORE) BACKEND ============================= */
 /* All shared app data lives in Cloud Firestore: one collection per table, one document per record. */
-const DEFAULT_BACKEND = { url:'', key:'' };
+const DEFAULT_BACKEND = { url:'sakshi-ams', key:'AIzaSyB0_ZJGb_CmOAn_CFXErmHYcqkhAgC2NYk' };
 const ATT_FROM = ''; // Optional lower date bound (YYYY-MM-DD) to reduce attendance downloads.
 const LS_SUPABASE_KEY = 'atl_firestore_cfg_v1';
 function getSupabaseCfg(){
@@ -517,12 +517,12 @@ async function fsRequest(c, method, suffix='', body){
   const o={method, headers:{}};
   if(body!==undefined){ o.headers['Content-Type']='application/json'; o.body=JSON.stringify(body); }
   const r=await fetch(fsUrl(c,suffix),o);
-  if(!r.ok){ let detail=''; try{ const j=await r.json(); detail=j.error&&j.error.message?' — '+j.error.message:''; }catch(e){} throw new Error('HTTP '+r.status+detail); }
+  if(!r.ok){ let detail=''; try{ const j=await r.json(); detail=j.error&&j.error.message?' — '+j.error.message:(j.error&&j.error.status?' — '+j.error.status:''); }catch(e){} throw new Error('HTTP '+r.status+detail); }
   if(r.status===204) return null;
   const txt=await r.text(); return txt?JSON.parse(txt):null;
 }
 async function fsPost(c,suffix,body){ return fsRequest(c,'POST',suffix,body); }
-async function fsGet(c,path){ return fsRequest(c,'GET','/'+path); }
+async function fsGet(c,path){ return fsRequest(c,'GET','/'+String(path).replace(/^\/+/,'')); }
 function fsEnc(v){
   if(v===null||v===undefined) return {nullValue:null};
   if(typeof v==='number') return Number.isInteger(v)?{integerValue:String(v)}:{doubleValue:v};
@@ -552,23 +552,40 @@ function fsDocRow(doc){
 }
 function rtKey(id){ return String(id).replace(/[.$#\[\]\/%]/g,ch=>'%'+ch.charCodeAt(0).toString(16).toUpperCase().padStart(2,'0')); }
 function rtDecKey(k){ try{ return decodeURIComponent(k); }catch(e){ return k; } }
+/* Attendance is packed: ONE document per student per month ("attmonth"), one field per class slot (dDDpP = [id,subjectId,teacherId,status]).
+   A student's whole record is then ~6 reads instead of hundreds. */
+function attDocToRecs(row){
+  const out=[], ym=String(row.ym||'');
+  Object.keys(row).forEach(k=>{ const m=/^d(\d\d)p(\d+)$/.exec(k), a=row[k]; if(!m||!Array.isArray(a)) return;
+    out.push({id:a[0],studentId:row.studentId,subjectId:a[1],teacherId:a[2],date:ym.slice(0,4)+'-'+ym.slice(4,6)+'-'+m[1],period:Number(m[2]),status:a[3]}); });
+  return out;
+}
+function attSlot(r){ return {p:'attmonth/'+rtKey(r.studentId)+'_'+String(r.date).slice(0,4)+String(r.date).slice(5,7), ym:String(r.date).slice(0,4)+String(r.date).slice(5,7), f:'d'+String(r.date).slice(8,10)+'p'+r.period}; }
+function attWrite(r){ const a=attSlot(r), v={studentId:r.studentId, ym:a.ym, ts:Date.now()}; v[a.f]=[r.id,r.subjectId,r.teacherId,r.status]; return {p:a.p, v, mask:['studentId','ym','ts',a.f]}; }
+function attDelWrite(id){ const r=DB.attendance.find(x=>x.id===id); if(!r) return null; const a=attSlot(r); return {p:a.p, v:{studentId:r.studentId, ym:a.ym, ts:Date.now()}, mask:['studentId','ym','ts',a.f]}; }
+function mergeMasked(ws){
+  const out=[], idx={};
+  ws.forEach(w=>{ if(!w.mask){ out.push(w); return; }
+    let e=idx[w.p]; if(!e){ e=idx[w.p]={p:w.p,v:{},mask:[]}; out.push(e); }
+    w.mask.forEach(m=>{ if(m in w.v) e.v[m]=w.v[m]; else delete e.v[m]; if(!e.mask.includes(m)) e.mask.push(m); }); });
+  return out;
+}
 function fsRowWrite(table,row){
+  if(table==='attendance') return attWrite(prepRow(table,row));
   const r=prepRow(table,row), fields={};
   Object.keys(r).forEach(k=>{ if(r[k]!==undefined) fields[k]=fsEnc(r[k]); });
-  if(table==='attendance') fields.ts=fsEnc(Date.now());
   return {p:table+'/'+rtKey(r.id), fields};
 }
 function fsValueDocFields(value){ const fields={}; Object.keys(value||{}).forEach(k=>{ if(value[k]!==undefined) fields[k]=fsEnc(value[k]); }); return fields; }
-async function fsRunQuery(c, collection, where){
-  const structuredQuery={from:[{collectionId:collection}]};
+async function fsRunQuery(c, collection, where, limit){
+  const structuredQuery={from:[{collectionId:collection}]}; if(limit) structuredQuery.limit=limit;
   if(where) structuredQuery.where={fieldFilter:{field:{fieldPath:where.field},op:where.op,value:fsEnc(where.value)}};
   const items=await fsPost(c,':runQuery',{structuredQuery});
   return (items||[]).filter(x=>x.document).map(x=>x.document);
 }
 async function fsTable(c,table){
-  let docs;
-  if(table==='attendance' && ATT_FROM) docs=await fsRunQuery(c,table,{field:'date',op:'GREATER_THAN_OR_EQUAL',value:ATT_FROM});
-  else docs=await fsRunQuery(c,table);
+  if(table==='attendance'){ let recs=(await fsRunQuery(c,'attmonth')).map(fsDocRow).flatMap(attDocToRecs); if(ATT_FROM) recs=recs.filter(r=>r.date>=ATT_FROM); return recs; }
+  let docs=await fsRunQuery(c,table);
   return docs.map(fsDocRow);
 }
 async function fsGetTableDoc(c,table,id){
@@ -590,20 +607,90 @@ async function apiGetAll(){
 const LAST_REV={}; let REV_SEEN=null, POLL_BUSY=false, PENDING=false, ATT_CURSOR=0, LAST_POLL=0;
 async function fetchAttendanceFull(c){ const rows=await fsTable(c,'attendance'); ATT_CURSOR=Date.now(); return rows; }
 async function fetchAttendanceDelta(c){
-  const t0=Date.now(), docs=await fsRunQuery(c,'attendance',{field:'ts',op:'GREATER_THAN_OR_EQUAL',value:Math.max(0,ATT_CURSOR-120000)});
-  const map=new Map(DB.attendance.map(r=>[r.id,r])); docs.map(fsDocRow).forEach(o=>map.set(o.id,o)); ATT_CURSOR=t0; return Array.from(map.values());
+  const t0=Date.now(), rows=(await fsRunQuery(c,'attmonth',{field:'ts',op:'GREATER_THAN_OR_EQUAL',value:Math.max(0,ATT_CURSOR-120000)})).map(fsDocRow);
+  const keys=new Set(rows.map(r=>r.studentId+'|'+r.ym));
+  const base=DB.attendance.filter(a=>!keys.has(a.studentId+'|'+String(a.date).slice(0,4)+String(a.date).slice(5,7)));
+  rows.forEach(r=>attDocToRecs(r).forEach(x=>base.push(x))); ATT_CURSOR=t0; return base;
 }
 /* ---- local cache (IndexedDB): page loads re-read only what changed ---- */
 function idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('atl_cache',1); r.onupgradeneeded=()=>r.result.createObjectStore('kv'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
 async function snapLoad(){ try{ const d=await idb(); return await new Promise(res=>{ const q=d.transaction('kv').objectStore('kv').get('snap'); q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null); }); }catch(e){ return null; } }
 let _snapT;
 function saveSnap(now){
+  if(!FULL_LOADED) return;
   clearTimeout(_snapT); _snapT=setTimeout(async()=>{ try{
     const c=getSupabaseCfg(), data={}, rv=Object.assign({},REV_SEEN||{});
     Object.keys(LAST_REV).forEach(t=>{ if(t!=='attendance') delete rv[t]; });
     SYNC_TABLES.forEach(t=>{ data[t]=t==='sessions'?DB.sessions.map(x=>Object.assign({},x,{files:(x.files||[]).map(f=>({name:f.name,size:f.size,fid:f.fid||'',chunks:f.chunks||0}))})):DB[t]; });
     const d=await idb(); d.transaction('kv','readwrite').objectStore('kv').put({cfg:c.url+'|'+ATT_FROM,rev:rv,attCursor:ATT_CURSOR,data},'snap');
   }catch(e){} },now?0:1500);
+}
+
+/* ============ SCOPED LOADING (keeps Firestore reads low) ============
+   - Opening the link reads NOTHING.
+   - Student sign-in reads only that student's class data + own attendance (cached on the device afterwards).
+   - Teachers/admin load everything only AFTER they sign in. */
+let FULL_LOADED=false, STU_SESS_LOADED=false, LOGIN_STU=null, STU_CK=null, STU_REV=null;
+async function kvGet(k){ try{ const d=await idb(); return await new Promise(res=>{ const q=d.transaction('kv').objectStore('kv').get(k); q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null); }); }catch(e){ return null; } }
+async function kvPut(k,v){ try{ const d=await idb(); d.transaction('kv','readwrite').objectStore('kv').put(v,k); }catch(e){} }
+function cacheBrand(){ try{ localStorage.setItem('atl_brand_cache', JSON.stringify(DB.settings.filter(x=>x.id==='brand'||x.id==='periods'))); }catch(e){} }
+function resetData(){ const keep=DB.settings.filter(x=>x.id==='brand'||x.id==='periods'); SYNC_TABLES.forEach(t=>{ DB[t]=[]; }); DB.settings=keep; FULL_LOADED=false; STU_SESS_LOADED=false; REV_SEEN=null; ATT_CURSOR=0; LOGIN_STU=null; }
+async function fetchById(table,id){ try{ return await fsGetTableDoc(getSupabaseCfg(),table,id); }catch(e){ if(/HTTP 404/.test(e.message)) return null; throw e; } }
+async function findStudentByReg(reg){
+  if(!BACKEND_ON()) return DB.students.find(x=>String(x.regNo).toLowerCase()===reg.toLowerCase())||null;
+  const c=getSupabaseCfg();
+  for(const v of Array.from(new Set([reg,reg.toUpperCase(),reg.toLowerCase()]))){
+    const d=await fsRunQuery(c,'students',{field:'regNo',op:'EQUAL',value:v},1);
+    if(d.length){ LOGIN_STU=fsDocRow(d[0]); return LOGIN_STU; }
+  }
+  return null;
+}
+async function findTeacherByTid(tid){
+  if(!BACKEND_ON()) return DB.teachers.find(x=>String(x.teacherId).toLowerCase()===tid.toLowerCase())||null;
+  const c=getSupabaseCfg();
+  for(const v of Array.from(new Set([tid,tid.toUpperCase(),tid.toLowerCase()]))){
+    const d=await fsRunQuery(c,'teachers',{field:'teacherId',op:'EQUAL',value:v},1);
+    if(d.length) return fsDocRow(d[0]);
+  }
+  return null;
+}
+async function ensureAdminAcct(){
+  if(!BACKEND_ON()||window._adminAcctTried) return; window._adminAcctTried=true;
+  try{ const r=await fetchById('settings','adminAcct'); if(r&&!DB.settings.some(x=>x.id==='adminAcct')) DB.settings.push(r); }catch(e){ window._adminAcctTried=false; }   // database not ready (e.g. rules not published): the admin can still sign in with the default login and fix it in Settings
+}
+async function loadFull(){ FULL_LOADED=true; await loadAll(); applyPeriodConfig(); applyBrand(); cacheBrand(); }
+const STU_STATIC=['classes','subjects','timetable','holidays','settings'];
+async function loadStudentScope(stu){
+  const c=getSupabaseCfg(), cid=stu.classId; STU_SESS_LOADED=false;
+  const rev=await getRev(), ck='stu_'+stu.id, cache=await kvGet(ck);
+  let S=(cache&&rev&&STU_STATIC.every(t=>rev[t]!==undefined&&cache.rev[t]===rev[t]))?cache.stat:null;
+  if(!S){
+    const cut=new Date(Date.now()-180*86400000).toLocaleDateString('en-CA');
+    const [cls,subs,tt,hol,brand,per]=await Promise.all([
+      fetchById('classes',cid), fsRunQuery(c,'subjects',{field:'classId',op:'EQUAL',value:cid}), fsRunQuery(c,'timetable',{field:'classId',op:'EQUAL',value:cid}),
+      fsRunQuery(c,'holidays',{field:'date',op:'GREATER_THAN_OR_EQUAL',value:cut},60), fetchById('settings','brand'), fetchById('settings','periods') ]);
+    const subjects=subs.map(fsDocRow), tids=Array.from(new Set(subjects.map(x=>x.teacherId).filter(Boolean)));
+    const teachers=(await Promise.all(tids.map(id=>fetchById('teachers',id)))).filter(Boolean).map(t=>({id:t.id,teacherId:'',name:t.name}));   // names only
+    S={classes:cls?[cls]:[],subjects,timetable:tt.map(fsDocRow),holidays:hol.map(fsDocRow),settings:[brand,per].filter(Boolean),teachers};
+  }
+  let att=(cache&&rev&&rev.attendance!==undefined&&cache.rev.attendance===rev.attendance&&cache.att)?cache.att:null;
+  if(!att) att=(await fsRunQuery(c,'attmonth',{field:'studentId',op:'EQUAL',value:stu.id})).map(fsDocRow).flatMap(attDocToRecs);
+  const sess=(cache&&rev&&rev.sessions!==undefined&&cache.rev.sessions===rev.sessions&&cache.sess)?cache.sess:null;
+  DB.students=[stu]; Object.keys(S).forEach(t=>{ DB[t]=S[t]; }); DB.attendance=att; DB.sessions=[];
+  STU_CK=ck; STU_REV=rev; if(sess){ DB.sessions=sess; STU_SESS_LOADED=true; }
+  if(rev) kvPut(ck,{rev,stat:S,att,sess});
+  applyPeriodConfig(); applyBrand(); cacheBrand();
+}
+async function loadStudentSessions(){
+  const c=getSupabaseCfg(), st=DB.students[0]; if(!st) return;
+  DB.sessions=(await fsRunQuery(c,'sessions',{field:'classId',op:'EQUAL',value:st.classId},20)).map(fsDocRow);   // latest 20 entries only
+  STU_SESS_LOADED=true;
+  if(STU_REV&&STU_CK){ const cache=await kvGet(STU_CK); if(cache) kvPut(STU_CK,Object.assign(cache,{sess:DB.sessions,rev:Object.assign({},cache.rev,{sessions:STU_REV.sessions})})); }
+}
+async function bootData(){
+  if(!BACKEND_ON()) return;
+  if(state.role==='student') await loadStudentScope(LOGIN_STU||DB.students[0]);
+  else if(state.role==='teacher') await loadFull();
 }
 async function loadAll(){
   const c=getSupabaseCfg(), sn=await snapLoad(), same=(sn&&sn.cfg===c.url+'|'+ATT_FROM&&sn.data)?sn:null;
@@ -629,32 +716,35 @@ function revWrite(c,tables){ const ts=Date.now(); const fields={}; [].concat(tab
 function chunkWrites(w){ const o=[]; for(let i=0;i<w.length;i+=450)o.push(w.slice(i,i+450)); return o; }
 function fsCommitWrite(c,w){
   if(w.v===null) return {delete:fsDocPath(c,w.p)};
+  if(w.mask){ const f={}; Object.keys(w.v||{}).forEach(k=>{ if(w.v[k]!==undefined) f[k]=fsEnc(w.v[k]); }); return {update:{name:fsDocPath(c,w.p),fields:f},updateMask:{fieldPaths:w.mask}}; }
   const fields={}; Object.keys(w.v||{}).forEach(k=>{if(w.v[k]!==undefined)fields[k]=fsEnc(w.v[k]);});
   return {update:{name:fsDocPath(c,w.p),fields}};
 }
 function syncFail(err){ console.error('[sync] failed',err); syncNotice('Could not save to Firestore ('+err.message+'). '+(/40[13]/.test(err.message)?'Firestore Security Rules are blocking the write. Check your Firestore rules.':'Check the internet connection and Firebase project settings.'),true); }
 async function pushWrites(writes,tables){
   const c=getSupabaseCfg(); if(!writes.length) return true;
+  writes=mergeMasked(writes);
   try{
     const rev=revWrite(c,tables), chunks=chunkWrites(writes);
     if(chunks.length===1) await fsPost(c,':commit',{writes:chunks[0].map(w=>fsCommitWrite(c,w)).concat([{update:{name:fsDocPath(c,rev.p),fields:fsValueDocFields(rev.fields)},updateMask:{fieldPaths:Object.keys(rev.fields)}}])});
     else { for(const chunk of chunks) await fsPost(c,':commit',{writes:chunk.map(w=>fsCommitWrite(c,w))}); await fsPost(c,':commit',{writes:[{update:{name:fsDocPath(c,rev.p),fields:fsValueDocFields(rev.fields)},updateMask:{fieldPaths:Object.keys(rev.fields)}}]}); }
   }catch(err){syncFail(err);return false;} return true;
 }
+function fsW(table,r){ const x=fsRowWrite(table,r); if(x.mask) return x; const v={}; Object.keys(x.fields).forEach(k=>v[k]=fsDec(k,x.fields[k])); return {p:x.p,v}; }
+function delW(table,id){ if(table==='attendance') return attDelWrite(id); return {p:table+'/'+rtKey(id),v:null}; }
 async function syncBatch(table,ups,dels){
   if(!BACKEND_ON()) return true;
-  const w=(ups||[]).map(r=>{const x=fsRowWrite(table,r);return {p:x.p,v:Object.fromEntries(Object.keys(x.fields).map(k=>[k,fsDec(k,x.fields[k])]))};})
-    .concat((dels||[]).map(id=>({p:table+'/'+rtKey(id),v:null})));
+  const w=(ups||[]).map(r=>fsW(table,r)).concat((dels||[]).map(id=>delW(table,id)).filter(Boolean));
   return pushWrites(w,(table==='attendance'&&(dels||[]).length)?[table,'attendance_del']:[table]);
 }
 async function syncMulti(parts){
   if(!BACKEND_ON())return true; const w=[],tables=[];
-  parts.forEach(p=>{(p.ups||[]).forEach(r=>{const x=fsRowWrite(p.table,r),v={};Object.keys(x.fields).forEach(k=>v[k]=fsDec(k,x.fields[k]));w.push({p:x.p,v});});(p.dels||[]).forEach(id=>w.push({p:p.table+'/'+rtKey(id),v:null}));if((p.ups||[]).length||(p.dels||[]).length)tables.push(p.table);});
+  parts.forEach(p=>{(p.ups||[]).forEach(r=>w.push(fsW(p.table,r)));(p.dels||[]).forEach(id=>{const d=delW(p.table,id); if(d) w.push(d);});if((p.ups||[]).length||(p.dels||[]).length)tables.push(p.table);});
   return pushWrites(w,tables);
 }
 async function syncSeedAll(){
   if(!BACKEND_ON())return true; const w=[];
-  SYNC_TABLES.forEach(t=>DB[t].forEach(r=>{const x=fsRowWrite(t,r),v={};Object.keys(x.fields).forEach(k=>v[k]=fsDec(k,x.fields[k]));w.push({p:x.p,v});}));
+  SYNC_TABLES.forEach(t=>DB[t].forEach(r=>w.push(fsW(t,r))));
   return pushWrites(w,SYNC_TABLES);
 }
 let _noticeT;
@@ -670,7 +760,7 @@ async function getRev(){
 function rerenderView(){const y=scrollY;try{enterApp();}catch(e){logout();return;}scrollTo(0,y);}
 function liveRefresh(){const ae=document.activeElement,editing=ae&&/^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)&&!ae.closest('#topbar');if(editing||ttDirty()||(state.role==='teacher'&&state.teacherTab==='mark')){PENDING=true;return;}PENDING=false;rerenderView();}
 async function pollRev(){
-  if(!BACKEND_ON()||document.hidden||POLL_BUSY||!state.role)return;if(Date.now()-LAST_ACT>1800000)return;LAST_POLL=Date.now();if(PENDING)liveRefresh();POLL_BUSY=true;
+  if(!BACKEND_ON()||document.hidden||POLL_BUSY||!state.role||state.role==='student'||!FULL_LOADED)return;if(Date.now()-LAST_ACT>1800000)return;LAST_POLL=Date.now();if(PENDING)liveRefresh();POLL_BUSY=true;
   try{const rev=await getRev();if(!rev)return;const old=REV_SEEN||{},changed=Object.keys(rev).filter(k=>SYNC_TABLES.includes(k)&&rev[k]!==old[k]&&rev[k]!==LAST_REV[k]);const attDel=rev.attendance_del!==old.attendance_del&&rev.attendance_del!==LAST_REV.attendance_del;REV_SEEN=rev;if(!changed.length&&!attDel)return;if(attDel&&!changed.includes('attendance'))changed.push('attendance');const c=getSupabaseCfg();const res=await Promise.all(changed.map(t=>t==='attendance'?(attDel?fetchAttendanceFull(c):fetchAttendanceDelta(c)):fetchTable(c,t)));changed.forEach((t,i)=>DB[t]=res[i]);saveSnap();if(changed.includes('settings')){applyPeriodConfig();applyBrand();const ms=state.role==='teacher'&&state.teacherTab==='mark'?$('#mark-period'):null;if(ms){if(state.markPeriod>PERIODS.length)state.markPeriod=1;ms.innerHTML=PERIODS.map(p=>'<option value="'+p+'" '+(p===state.markPeriod?'selected':'')+'>Period '+p+' · '+PERIOD_TIMES[p]+'</option>').join('');}}liveRefresh();}
   catch(e){console.error(e);}finally{POLL_BUSY=false;}
 }
@@ -1302,6 +1392,12 @@ function bindLoginEvents(){
 }
 
 async function login(role){
+  const btn=document.querySelector('[data-login="'+role+'"]'); if(btn){ btn.disabled=true; }
+  try{ await loginInner(role); }
+  catch(e){ state.role=null; const m=String(e&&e.message||e); showLoginError(role,'Could not reach the database ('+m+'). '+(/HTTP 40[13]/.test(m)?'Firestore is blocking access: in Firebase Console > Firestore Database > Rules, publish the rules shown in Admin > Settings (and make sure the Firestore database has been created). Ask the admin to do this.':'Check your connection and try again.')); }
+  finally{ if(btn) btn.disabled=false; }
+}
+async function loginInner(role){
   showLoginError(role, '');
   if(lockLeft()){ showLoginError(role,'Too many attempts. Try again in '+Math.ceil(lockLeft()/60000)+' min.'); return; }
 
@@ -1309,7 +1405,7 @@ async function login(role){
     const reg = $('#student-reg').value.trim();
     const dob = $('#student-pass').value.trim();
     if(!reg || !dob){ showLoginError('student', 'Enter your register number and phone number.'); return; }
-    const student = DB.students.find(s=>s.regNo.toLowerCase()===reg.toLowerCase());
+    const student = await findStudentByReg(reg);
     const dg = v=>String(v||'').replace(/\D/g,'');
     if(!student || !dg(student.phone) || dg(student.phone) !== dg(dob)){ failLogin(); showLoginError('student', 'Register number or phone number is incorrect.'); return; }
     state.role = 'student';
@@ -1320,7 +1416,7 @@ async function login(role){
     const tid = $('#teacher-id-input').value.trim();
     const pass = $('#teacher-pass').value;
     if(!tid || !pass){ showLoginError('teacher', 'Enter your teacher ID and password.'); return; }
-    const teacher = DB.teachers.find(t=>t.teacherId.toLowerCase()===tid.toLowerCase());
+    const teacher = await findTeacherByTid(tid);
     let ok=false;
     if(teacher){
       if(teacher.passHash) ok=(await hashPw(pass,teacher.id))===teacher.passHash;
@@ -1335,6 +1431,7 @@ async function login(role){
   else if(role==='admin'){
     const user = $('#admin-user').value.trim();
     const pass = $('#admin-pass').value;
+    await ensureAdminAcct();
     const A = adminAccount();
     const h=await hashPw(pass,'admin');
     if(user !== A.user || h !== A.h){ failLogin(); showLoginError('admin', 'Username or password is incorrect.'); return; }
@@ -1351,6 +1448,7 @@ async function login(role){
     return;
   }
 
+  await bootData();
   await fpOffer();
   enterApp();
 }
@@ -1399,7 +1497,9 @@ function resetAdminLoginUi(clearPass){
   q('admin-otp').value=''; if(clearPass) q('admin-pass').value='';
 }
 async function finishAdminLogin(needEmail){
-  okLogin(); migrateTeacherPasswords(); purgeOldMail();
+  okLogin();
+  if(BACKEND_ON()) await loadFull();
+  migrateTeacherPasswords(); purgeOldMail();
   state.role='admin'; state.adminTab = needEmail ? 'account' : 'overview';
   $('#admin-user').value=''; $('#admin-pass').value='';
   resetAdminLoginUi(true);
@@ -1494,9 +1594,9 @@ async function fpSignIn(){
       const data=new Uint8Array(ad.length+32); data.set(ad,0); data.set(h,ad.length);
       if(!(await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},key,fpDerToRaw(r.signature),data))) throw new Error('bad signature');
     }
-    if(role==='student'){ const s=DB.students.find(x=>x.id===e.key); if(!s) throw new Error('gone'); state.role='student'; state.studentId=s.id; }
-    else if(role==='teacher'){ const t=DB.teachers.find(x=>x.id===e.key); if(!t) throw new Error('gone'); state.role='teacher'; state.teacherId=t.id; state.teacherTab='dashboard'; }
-    else { state.role='admin'; state.adminTab='overview'; migrateTeacherPasswords(); }
+    if(role==='student'){ const s=BACKEND_ON()?await fetchById('students',e.key):DB.students.find(x=>x.id===e.key); if(!s) throw new Error('gone'); LOGIN_STU=s; state.role='student'; state.studentId=s.id; if(BACKEND_ON()) await loadStudentScope(s); }
+    else if(role==='teacher'){ const t=BACKEND_ON()?await fetchById('teachers',e.key):DB.teachers.find(x=>x.id===e.key); if(!t) throw new Error('gone'); state.role='teacher'; state.teacherId=t.id; state.teacherTab='dashboard'; if(BACKEND_ON()) await loadFull(); }
+    else { if(BACKEND_ON()) await loadFull(); state.role='admin'; state.adminTab='overview'; migrateTeacherPasswords(); }
     okLogin(); enterApp();
   }catch(err){
     showLoginError(role, err&&err.name==='NotAllowedError' ? 'Fingerprint was cancelled. Try again or use your password.' : 'Fingerprint sign-in failed. Please use your password.');
@@ -1518,6 +1618,7 @@ function logout(ev){
   if(ev&&ev.type==='click'&&ttDirty()&&!confirm('You have unsaved timetable changes. Sign out and discard them?')) return;
   state.ttDraft={};
   state.role = null;
+  resetData();
   try{ resetAdminLoginUi(true); }catch(e){}
   $('#topbar').style.display='none';
   $all('.view').forEach(v=>v.classList.remove('active'));
@@ -1575,6 +1676,11 @@ function renderStudentTimetable(){
 }
 
 function renderStudentContentTab(){
+  if(BACKEND_ON() && !STU_SESS_LOADED){
+    $('#student-content').innerHTML='<div class="card"><p class="sub">Loading your class content…</p></div>';
+    loadStudentSessions().catch(e=>{ console.error(e); }).then(()=>{ STU_SESS_LOADED=true; if(state.role==='student'&&state.studentTab==='content') renderStudentContentTab(); });
+    return;
+  }
   const student = DB.students.find(s=>s.id===state.studentId);
   const subjects = DB.subjects.filter(su=>su.classId===student.classId);
   const subjectIds = new Set(subjects.map(s=>s.id));
@@ -2464,6 +2570,7 @@ function handleOldWorkbook(e){
 
 /* --- Settings (Firebase link + backup/restore) --- */
 
+const FIRESTORE_RULES = "rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /{col}/{doc} {\n      allow read, write: if col in [\n        'classes', 'teachers', 'subjects', 'students', 'attmonth',\n        'timetable', 'holidays', 'sessions', 'sessionfiles',\n        'settings', 'meta', 'mail'\n      ];\n    }\n  }\n}";
 function renderAdminSettings(){
   const cfg = getSupabaseCfg();
   const connected = BACKEND_ON();
@@ -2479,6 +2586,10 @@ function renderAdminSettings(){
     + '</div><div id="sb-status" class="sub" style="margin-top:10px;"></div></div>';
 
   html += '<div class="card"><h3>One-time setup: Cloud Firestore</h3><p class="sub" style="margin-bottom:10px;">1) Open Firebase Console. 2) Build &gt; Firestore Database &gt; Create database. 3) Copy the Project ID from Project settings &gt; General and the Web API key from Your apps. 4) Enter both values above and save. The app stores each table as a collection and each record as a document. Email delivery still uses the Firestore <b>Trigger Email from Firestore</b> extension.</p><p class="sub"><b>Security:</b> This HTML currently uses its own client-side app login and Firestore REST API without a Firebase Authentication ID token. Therefore, rules requiring request.auth will block its requests. Collection allow-list rules without request.auth can be used only for temporary testing; they do not secure student data. For production, integrate Firebase Authentication and role-based rules.</p></div>';
+  html += '<div class="card"><div class="mark-toolbar"><h3>Firestore security rules</h3><button class="btn btn-ghost btn-sm" id="rules-copy">Copy rules</button></div>'
+    + '<p class="sub" style="margin:8px 0 10px;">Open Firebase Console &gt; Firestore Database &gt; <b>Rules</b>, replace everything with the rules below, and click <b>Publish</b>. They allow only the collections this app uses.</p>'
+    + '<pre id="rules-text" style="background:#f4f4f8;color:#1F1B3A;padding:12px;border-radius:6px;overflow:auto;font-size:.8rem;line-height:1.5;white-space:pre;user-select:all;">'+escapeHtml(FIRESTORE_RULES)+'</pre>'
+    + '<p class="sub" style="margin-top:10px;"><b>Important:</b> the app signs in with its own login and does not send a Firebase Authentication token, so these rules cannot check who is calling. Anyone who knows the project details could read or change the listed collections directly. Use them for testing; real student data needs Firebase Authentication added first.</p></div>';
 
   const bd = getSetting('brand', {});
   html += '<div class="card"><h3>College logo &amp; front page</h3><div class="form-row">'
@@ -2505,6 +2616,12 @@ function renderAdminSettings(){
   $('#bn-logo').addEventListener('change', e=>{ if(e.target.files[0]) readLogo(e.target.files[0], d=>{ pendingLogo = d; }); });
   $('#bn-save').addEventListener('click', ()=>{ setSetting('brand', {name:$('#bn-name').value.trim(), tagline:$('#bn-tag').value.trim(), details:$('#bn-det').value.trim(), logo:pendingLogo}); applyBrand(); alert('Front page saved.'); });
   $('#export-all').addEventListener('click', ()=>{ const wb = XLSX.utils.book_new(); SYNC_TABLES.forEach(t=>XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(DB[t].map(r=>Object.assign({}, r, r.files?{files:JSON.stringify(r.files)}:{})), {header:IMPORT_SCHEMA[t]}), t)); XLSX.writeFile(wb, 'Attendance_Ledger_Data.xlsx'); });
+  $('#rules-copy').addEventListener('click', async ()=>{
+    const b=$('#rules-copy');
+    try{ await navigator.clipboard.writeText(FIRESTORE_RULES); b.textContent='Copied'; }
+    catch(e){ const r=document.createRange(); r.selectNodeContents($('#rules-text')); const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r); b.textContent='Selected - press Ctrl+C'; }
+    setTimeout(()=>{ b.textContent='Copy rules'; },2500);
+  });
   $('#sb-save').addEventListener('click', async ()=>{
     const url=$('#sb-url').value.trim(), key=$('#sb-key').value.trim();
     if(!/^[a-z0-9-]+$/.test(url)){ $('#sb-status').textContent='Enter a valid Firebase Project ID (for example, my-attendance-app).'; return; }
@@ -2534,7 +2651,7 @@ function renderAdminSettings(){
   });
   $('#wipe-all').addEventListener('click', async ()=>{
     if(prompt('This deletes ALL data permanently. Type DELETE to confirm.')!=='DELETE') return;
-    const c=getSupabaseCfg(), w=[]; SYNC_TABLES.forEach(t=>{ DB[t].forEach(r=>w.push({p:t+'/'+rtKey(r.id),v:null})); });
+    const c=getSupabaseCfg(), w=[]; SYNC_TABLES.forEach(t=>{ if(t==='attendance'){ new Set(DB.attendance.map(r=>attSlot(r).p)).forEach(p=>w.push({p,v:null})); } else DB[t].forEach(r=>w.push({p:t+'/'+rtKey(r.id),v:null})); });
     if(BACKEND_ON() && !(await pushWrites(w,SYNC_TABLES.concat(['attendance_del'])))) return;
     SYNC_TABLES.forEach(t=>{ DB[t]=[]; });
     alert('All data deleted.'); renderAdminSettings();
@@ -3524,10 +3641,11 @@ function renderAdminAccount(){
 /* ============================= INIT ============================= */
 function initApp(){
   const ready = ()=>{ applyPeriodConfig(); applyBrand(); populateLoginSelects(); bindLoginEvents(); };
-  if(!BACKEND_ON()){ ready(); return; }          // no database configured: start empty
+  if(BACKEND_ON()){ try{ const b=JSON.parse(localStorage.getItem('atl_brand_cache')||'[]'); if(Array.isArray(b)) DB.settings=b; }catch(e){} }
   document.addEventListener('visibilitychange',()=>{ if(document.hidden) saveSnap(true); else if(Date.now()-LAST_POLL>120000) pollRev(); });
   window.addEventListener('pagehide',()=>saveSnap(true));
-  loadAll().catch(err=>console.error(err)).finally(()=>{ ready(); schedulePoll(); });
+  ready();                                       // opening the link reads nothing from the database
+  if(BACKEND_ON()) schedulePoll();
 }
 initApp();
 </script>
